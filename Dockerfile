@@ -11,10 +11,10 @@ COPY ./requirements.txt /code/requirements.txt
 RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
 
 # --- START: FINAL PERMISSION FIXES ---
-# Create a writable directory for model caches
+# Create writable directories for caches, databases, and temporary files.
 RUN mkdir -p /code/cache && chmod 777 /code/cache
-# Create a writable directory for the vector database
 RUN mkdir -p /code/app/chroma_db && chmod -R 777 /code/app/chroma_db
+RUN mkdir -p /tmp/docs && chmod 777 /tmp/docs # <-- ADD THIS LINE
 # Tell all Hugging Face libraries to use the new cache directory
 ENV HF_HOME=/code/cache
 ENV SENTENCE_TRANSFORMERS_HOME=/code/cache

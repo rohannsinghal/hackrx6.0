@@ -57,7 +57,7 @@ def get_next_api_key():
 
 EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 CHROMA_PERSIST_DIR = "./app/chroma_db"
-UPLOAD_DIR = "./app/documents"
+UPLOAD_DIR = "/tmp/docs" # Use the writable temporary directory
 
 try:
     embedding_model = SentenceTransformer(EMBEDDING_MODEL)
