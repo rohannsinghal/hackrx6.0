@@ -11,11 +11,11 @@ COPY ./requirements.txt /code/requirements.txt
 RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
 
 # --- START: FINAL PERMISSION FIX ---
-# Create a writable cache directory AND set the correct owner for the app user
-RUN mkdir /code/cache && chown -R user:user /code/cache
-# Tell all Hugging Face libraries to use this new directory (the modern way)
+# Create a writable cache directory by changing its permissions.
+# This allows any user (including the one running the app) to write to it.
+RUN mkdir -p /code/cache && chmod 777 /code/cache
+# Tell all Hugging Face libraries to use this new directory
 ENV HF_HOME=/code/cache
-# Also set the specific variable for sentence-transformers for good measure
 ENV SENTENCE_TRANSFORMERS_HOME=/code/cache
 # --- END: FINAL PERMISSION FIX ---
 
