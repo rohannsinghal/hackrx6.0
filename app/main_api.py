@@ -9,7 +9,7 @@ import asyncio
 from itertools import cycle
 
 # FastAPI and core dependencies
-from fastapi import FastAPI, Body, HTTPException
+from fastapi import FastAPI, Body, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -88,7 +88,9 @@ class RAGPipeline:
 
     # In app/main_api.py, inside the RAGPipeline class
 
-    def add_documents(self, chunks: List[Dict]): # Note: It receives dicts
+    # In app/main_api.py, inside the RAGPipeline class
+
+    def add_documents(self, chunks: List[Dict]):
         if not chunks:
             logger.warning("No chunks provided to add_documents.")
             return
@@ -96,7 +98,8 @@ class RAGPipeline:
         logger.info(f"Starting to add {len(chunks)} chunks...")
         
         # --- START OF FIX ---
-        # The list now contains dictionaries, so we use dictionary access `c['key']`
+        # The 'chunks' variable is a list of dictionaries. This code correctly
+        # uses dictionary key access `c['key']` to get the data.
         contents = [c['content'] for c in chunks]
         metadatas = [c['metadata'] for c in chunks]
         ids = [c['chunk_id'] for c in chunks]
@@ -141,10 +144,13 @@ class RAGPipeline:
             logger.error(f"Groq API call failed: {e}")
             return "Error: Could not generate an answer from the language model."
 
-# --- Main Hackathon Endpoint ---
 @app.post("/hackrx/run", response_model=SubmissionResponse)
-async def run_submission(request: SubmissionRequest = Body(...)):
+async def run_submission(request: Request, submission_request: SubmissionRequest = Body(...)):
     
+    # --- FIX: Access services from the application state via the request object ---
+    chroma_client = request.app.state.chroma_client
+    parsing_service = request.app.state.parsing_service
+
     # 1. Cleanup and Setup
     try:
         for collection in chroma_client.list_collections():
@@ -154,12 +160,16 @@ async def run_submission(request: SubmissionRequest = Body(...)):
         logger.warning(f"Could not clean up old collections: {e}")
 
     session_collection_name = f"hackrx_session_{uuid.uuid4().hex}"
-    rag_pipeline = RAGPipeline(collection_name=session_collection_name)
+    # --- FIX: Pass the request object to the RAG pipeline ---
+    rag_pipeline = RAGPipeline(collection_name=session_collection_name, request=request)
     
     # 2. Download and Process Documents
     all_chunks = []
+    # The UPLOAD_DIR variable should be defined at the top of your file
+    UPLOAD_DIR = "/tmp/docs" 
+    
     async with httpx.AsyncClient(timeout=120.0) as client:
-        for doc_url in request.documents:
+        for doc_url in submission_request.documents:
             try:
                 logger.info(f"Downloading document from: {doc_url}")
                 response = await client.get(doc_url, follow_redirects=True)
@@ -171,17 +181,17 @@ async def run_submission(request: SubmissionRequest = Body(...)):
                 with open(temp_file_path, "wb") as f:
                     f.write(response.content)
                 
-                # Your proven parsing logic
+                # This call now correctly uses the parsing_service loaded in the app state
                 chunks = parsing_service.process_pdf_ultrafast(temp_file_path)
                 all_chunks.extend(chunks)
                 os.remove(temp_file_path)
 
             except Exception as e:
-                logger.error(f"Failed to process document at {doc_url}: {e}")
+                logger.error(f"Failed to process document at {doc_url}: {e}", exc_info=True)
                 continue
     
     if not all_chunks:
-        failed_answers = [Answer(question=q, answer="A valid document could not be processed, so an answer could not be found.") for q in request.questions]
+        failed_answers = [Answer(question=q, answer="A valid document could not be processed, so an answer could not be found.") for q in submission_request.questions]
         return SubmissionResponse(answers=failed_answers)
 
     # 3. Add to Vector DB
@@ -193,7 +203,7 @@ async def run_submission(request: SubmissionRequest = Body(...)):
         answer_text = await rag_pipeline.generate_answer(question, relevant_docs)
         return Answer(question=question, answer=answer_text)
 
-    tasks = [answer_question(q) for q in request.questions]
+    tasks = [answer_question(q) for q in submission_request.questions]
     answers = await asyncio.gather(*tasks)
 
     return SubmissionResponse(answers=answers)
