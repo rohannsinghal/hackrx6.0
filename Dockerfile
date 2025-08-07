@@ -10,12 +10,14 @@ COPY ./requirements.txt /code/requirements.txt
 # Install any needed packages specified in requirements.txt
 RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
 
-# --- ADD THESE TWO LINES ---
-# Create a writable directory for model caches
-RUN mkdir /code/cache
-# Tell the library to use this new directory
-ENV TRANSFORMERS_CACHE=/code/cache
-# --- END OF ADDITION ---
+# --- START: FINAL PERMISSION FIX ---
+# Create a writable cache directory AND set the correct owner for the app user
+RUN mkdir /code/cache && chown -R user:user /code/cache
+# Tell all Hugging Face libraries to use this new directory (the modern way)
+ENV HF_HOME=/code/cache
+# Also set the specific variable for sentence-transformers for good measure
+ENV SENTENCE_TRANSFORMERS_HOME=/code/cache
+# --- END: FINAL PERMISSION FIX ---
 
 # Copy your application code into the container
 COPY ./app /code/app
