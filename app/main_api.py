@@ -86,14 +86,29 @@ class RAGPipeline:
         self.collection_name = collection_name
         self.collection = chroma_client.get_or_create_collection(name=self.collection_name)
 
-    def add_documents(self, chunks: List[Dict]):
-        if not chunks: return
+    # In app/main_api.py, inside the RAGPipeline class
+
+    def add_documents(self, chunks: List[Dict]): # Note: It receives dicts
+        if not chunks:
+            logger.warning("No chunks provided to add_documents.")
+            return
+        
+        logger.info(f"Starting to add {len(chunks)} chunks...")
+        
+        # --- START OF FIX ---
+        # The list now contains dictionaries, so we use dictionary access `c['key']`
+        contents = [c['content'] for c in chunks]
+        metadatas = [c['metadata'] for c in chunks]
+        ids = [c['chunk_id'] for c in chunks]
+        # --- END OF FIX ---
+        
         self.collection.add(
-            embeddings=embedding_model.encode([c["content"] for c in chunks], show_progress_bar=True).tolist(),
-            documents=[c["content"] for c in chunks],
-            metadatas=[c["metadata"] for c in chunks],
-            ids=[c["chunk_id"] for c in chunks]
+            embeddings=self.embedding_model.encode(contents, show_progress_bar=True).tolist(),
+            documents=contents,
+            metadatas=metadatas,
+            ids=ids
         )
+        logger.info(f"Finished adding {len(chunks)} chunks to collection '{self.collection_name}'")
 
     def query_documents(self, query: str, n_results: int = 5) -> List[Dict]:
         if not self.collection.count(): return []
