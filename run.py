@@ -1,16 +1,14 @@
 # run.py
 
 import uvicorn
-import sys
 import os
 
-# This line is crucial for running from the top-level directory
-# It tells Python to look for modules inside the 'app' folder
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'app')))
-
-from main_api import app
-
 if __name__ == "__main__":
-    print("🚀 Starting HackRx 6.0 RAG Server...")
-    print("API Documentation available at http://127.0.0.1:8000/docs")
-    uvicorn.run("main_api:app", host="0.0.0.0", port=8000, reload=True, app_dir="app")
+    # This makes the app compatible with hosting providers like Render.
+    # It will use the PORT environment variable if it exists, otherwise it defaults to 8000.
+    port = int(os.environ.get("PORT", 8000))
+    
+    print(f"🚀 Starting HackRx 6.0 RAG Server on port {port}...")
+    
+    # Use the standard 'app.module:variable' format for Uvicorn
+    uvicorn.run("app.main_api:app", host="0.0.0.0", port=port, reload=False)
