@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*build/
+*dist/
+
+# Virtual Environments
+venv/
+hackrxenv/
+unstructuredenv/
+
+# Secrets - VERY IMPORTANT
+.env
+
+# Local data
+app/documents/
+app/chroma_db/
+_fast_parsed_output.json
+
+# IDE and OS files
+.vscode/
+.idea/
+.DS_Store

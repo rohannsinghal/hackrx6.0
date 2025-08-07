@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+pydantic
+sentence-transformers
+chromadb
+groq
+langchain
+PyMuPDF # Corrected from 'fitz'
+pdfplumber
+mammoth # Corrected from 'mammoth-convert'
+beautifulsoup4
+httpx
+python-multipart
