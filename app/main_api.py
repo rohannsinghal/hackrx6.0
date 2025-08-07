@@ -1,5 +1,5 @@
 # app/main_api.py
-
+import psutil
 import os
 import json
 import uuid
@@ -186,3 +186,11 @@ async def run_submission(request: SubmissionRequest = Body(...)):
 @app.get("/")
 def read_root():
     return {"message": "HackRx 6.0 RAG System is running. See /docs for API details."}
+
+@app.get("/memory")
+def get_memory_usage():
+    process = psutil.Process(os.getpid())
+    mem_info = process.memory_info()
+    return {
+        "memory_usage_mb": mem_info.rss / (1024 * 1024)  # RSS in MB
+    }

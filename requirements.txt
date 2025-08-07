@@ -11,3 +11,5 @@ mammoth # Corrected from 'mammoth-convert'
 beautifulsoup4
 httpx
 python-multipart
+python-dotenv
+psutil
