@@ -10,6 +10,13 @@ COPY ./requirements.txt /code/requirements.txt
 # Install any needed packages specified in requirements.txt
 RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
 
+# --- ADD THESE TWO LINES ---
+# Create a writable directory for model caches
+RUN mkdir /code/cache
+# Tell the library to use this new directory
+ENV TRANSFORMERS_CACHE=/code/cache
+# --- END OF ADDITION ---
+
 # Copy your application code into the container
 COPY ./app /code/app
 
