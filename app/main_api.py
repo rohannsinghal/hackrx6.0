@@ -445,7 +445,7 @@ class GroqAPIKeyManager:
 # --- CONFIGURATION ---
 GROQ_API_KEYS = os.getenv("GROQ_API_KEYS", "").split(',')
 EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
-CHROMA_PERSIST_DIR = "./chroma_db"
+CHROMA_PERSIST_DIR = "/tmp/chroma_db_storage"
 UPLOAD_DIR = "/tmp/docs"
 
 @app.on_event("startup")
