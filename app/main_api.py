@@ -420,37 +420,79 @@ class OptimizedSemanticRAGPipeline:
         logger.info(f"✅ Optimized semantic RAG pipeline initialized: {collection_name}")
 
     def clean_response(self, answer: str) -> str:
-        """Clean up the response formatting for better readability"""
+        """Comprehensive response cleaning for professional formatting"""
         if not answer:
             return answer
         
-        # Remove excessive newlines
-        answer = re.sub(r'\n\s*\n\s*\n+', '\n\n', answer)  # Multiple newlines to double
-        answer = re.sub(r'\n\s*\n', '\n\n', answer)  # Ensure consistent double newlines for paragraphs
+        # Remove excessive newlines first
+        answer = re.sub(r'\n\s*\n\s*\n+', '\n\n', answer)
+        answer = re.sub(r'\n\s*\n', '\n\n', answer)
         
-        # Remove quotes around single words and short phrases
-        answer = re.sub(r'"([A-Z\s]{2,20})"', r'\1', answer)  # Remove quotes from short caps phrases
-        answer = re.sub(r'"(\w+)"', r'\1', answer)  # Remove quotes from single words
-        answer = re.sub(r'"(Rs\. [\d,]+[/-]*)"', r'\1', answer)  # Remove quotes from amounts
-        answer = re.sub(r'"(\d+%)"', r'\1', answer)  # Remove quotes from percentages
-        answer = re.sub(r'"(\d+ (?:days?|months?|years?))"', r'\1', answer)  # Remove quotes from time periods
+        # Remove ALL excessive quotation marks - comprehensive patterns
+        # Remove quotes around single words
+        answer = re.sub(r'"(\w+)"', r'\1', answer)
         
-        # Clean up policy references - keep important quotes but make them flow better
-        answer = re.sub(r'As stated in the policy: "([^"]+)"', r'The policy states that \1', answer)
-        answer = re.sub(r'According to the policy document: "([^"]+)"', r'According to the policy document, \1', answer)
-        answer = re.sub(r'The policy states: "([^"]+)"', r'The policy states that \1', answer)
-        answer = re.sub(r'As per the policy: "([^"]+)"', r'As per the policy, \1', answer)
+        # Remove quotes around short phrases (2-5 words)
+        answer = re.sub(r'"([^"]{1,50})"', r'\1', answer)
         
-        # Fix spacing and formatting
-        answer = re.sub(r'\s+', ' ', answer)  # Multiple spaces to single space
-        answer = answer.replace(' ,', ',')  # Fix spacing before commas
-        answer = answer.replace(' .', '.')  # Fix spacing before periods
-        answer = answer.strip()  # Remove leading/trailing whitespace
+        # Remove quotes around ALL CAPS words/phrases
+        answer = re.sub(r'"([A-Z\s]{2,50})"', r'\1', answer)
         
-        # Clean up excessive line breaks in the middle of sentences
+        # Remove quotes around numbers, percentages, amounts
+        answer = re.sub(r'"(Rs\.?\s*[\d,]+[/-]*)"', r'\1', answer)
+        answer = re.sub(r'"(\d+%)"', r'\1', answer)
+        answer = re.sub(r'"(\d+\s*(?:days?|months?|years?|lacs?))"', r'\1', answer)
+        answer = re.sub(r'"(\d+[.,]\d+)"', r'\1', answer)
+        
+        # Remove quotes around plan names and policy terms
+        answer = re.sub(r'"(Plan\s+[A-Z])"', r'\1', answer)
+        answer = re.sub(r'"([A-Z]+\s*[A-Z]*)"', r'\1', answer)
+        
+        # Clean up policy statement formats - make them flow naturally
+        answer = re.sub(r'[Aa]s stated in the policy[:\s]*"([^"]+)"', r'As per the policy, \1', answer)
+        answer = re.sub(r'[Aa]ccording to the policy[:\s]*"([^"]+)"', r'According to the policy, \1', answer)
+        answer = re.sub(r'[Tt]he policy states[:\s]*"([^"]+)"', r'The policy states that \1', answer)
+        answer = re.sub(r'[Aa]s per the policy[:\s]*"([^"]+)"', r'As per the policy, \1', answer)
+        answer = re.sub(r'[Tt]he policy mentions[:\s]*"([^"]+)"', r'The policy mentions that \1', answer)
+        
+        # Remove quotes from technical terms and common insurance phrases
+        insurance_terms = [
+            'sum insured', 'waiting period', 'grace period', 'pre-existing', 
+            'cumulative bonus', 'no claim discount', 'room rent', 'icu charges',
+            'ayush', 'hospital', 'medical expenses', 'policy period', 'exclusion',
+            'inpatient', 'outpatient', 'domiciliary', 'cashless', 'reimbursement'
+        ]
+        
+        for term in insurance_terms:
+            # Remove quotes around these terms (case insensitive)
+            pattern = f'"{re.escape(term)}"'
+            answer = re.sub(pattern, term, answer, flags=re.IGNORECASE)
+            # Also handle capitalized versions
+            pattern = f'"{re.escape(term.upper())}"'
+            answer = re.sub(pattern, term.upper(), answer, flags=re.IGNORECASE)
+        
+        # Clean up remaining problematic quote patterns
+        answer = re.sub(r'"\s*([^"]*)\s*"', r'\1', answer)  # Any remaining quoted text
+        
+        # Fix spacing issues
+        answer = re.sub(r'\s+', ' ', answer)  # Multiple spaces to single
+        answer = answer.replace(' ,', ',')    # Space before comma
+        answer = answer.replace(' .', '.')    # Space before period
+        answer = answer.replace('( ', '(')    # Space after opening parenthesis
+        answer = answer.replace(' )', ')')    # Space before closing parenthesis
+        
+        # Clean up line breaks within sentences
         answer = re.sub(r'([a-z,])\s*\n\s*([a-z])', r'\1 \2', answer)
         
-        return answer
+        # Final cleanup - remove any remaining escape characters
+        answer = answer.replace('\\"', '"')   # Remove escape characters
+        answer = answer.replace('\\n', ' ')   # Convert literal \n to space
+        answer = answer.replace('\\"', '')    # Remove any remaining escaped quotes
+        
+        # Ensure proper sentence structure
+        answer = re.sub(r'([.!?])\s*([A-Z])', r'\1 \2', answer)  # Space after sentence end
+        
+        return answer.strip()
 
     def add_documents(self, chunks: List[Dict[str, Any]]):
         if not chunks:
@@ -521,36 +563,33 @@ class OptimizedSemanticRAGPipeline:
             }
         )
 
-        # Enhanced semantic prompt template with better formatting
+        # Enhanced semantic prompt template with strict formatting rules
         prompt_template = PromptTemplate(
             input_variables=["context", "question"],
-            template="""You are an expert insurance policy analyst with semantic understanding capabilities. Analyze the policy document context to provide accurate, detailed answers.
+            template="""You are an expert insurance policy analyst. Analyze the policy document context to provide accurate, detailed answers.
 
 POLICY DOCUMENT CONTEXT:
 {context}
 
 QUESTION: {question}
 
-SEMANTIC ANALYSIS INSTRUCTIONS:
-- Carefully analyze the semantic meaning and relationships in the policy context
-- Extract specific facts: numbers, percentages, time periods, conditions, and requirements
-- Understand implicit connections between different policy sections
-- Quote exact policy language when providing specific details, but format quotes naturally
-- Synthesize information from multiple context sections when relevant
-- Distinguish between explicit statements and reasonable inferences
-- If information is partial, provide what's available and note limitations
+CRITICAL FORMATTING INSTRUCTIONS:
+- Write in natural, flowing sentences without excessive quotation marks
+- When referencing policy text, paraphrase or integrate naturally into sentences
+- Do NOT put quotes around single words, numbers, percentages, or short phrases
+- Do NOT put quotes around plan names (Plan A), amounts (Rs. 5,000), or time periods (30 days)
+- Write numbers and amounts directly: 30 days, 5%, Rs. 10,000, Plan A
+- Use quotes ONLY for exact lengthy policy clauses that need verbatim citation
+- Make the text read like professional analysis, not a quote-heavy document
+
+ANALYSIS INSTRUCTIONS:
+- Extract specific facts: numbers, percentages, time periods, conditions
+- Understand relationships between different policy sections  
 - Be precise about conditions, exceptions, and qualifying circumstances
+- If information is partial, state what's available and note limitations
 
-FORMATTING GUIDELINES:
-- Write in clear, professional paragraphs without unnecessary line breaks
-- When quoting policy text, integrate quotes smoothly into sentences
-- Use bullet points or numbered lists only when listing multiple related items
-- Avoid excessive quotation marks around single words or short phrases
-- Write numbers and percentages directly (e.g., 30 days, 5%, Rs. 10,000) without quotes
-- Make the response flow naturally and be easy to read
-
-ANSWER FORMAT:
-Provide a comprehensive, well-formatted answer based on your semantic analysis of the policy document context.
+RESPONSE STYLE:
+Write a comprehensive, naturally flowing analysis that reads professionally without excessive quotation marks or formatting issues.
 
 ANSWER:"""
         )
