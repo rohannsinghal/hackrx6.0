@@ -31,6 +31,7 @@ from langchain.callbacks.manager import CallbackManagerForLLMRun
 from langchain.retrievers.multi_query import MultiQueryRetriever
 from langchain.retrievers.contextual_compression import ContextualCompressionRetriever
 from langchain.retrievers.document_compressors import LLMChainFilter
+from langchain_community.document_compressors.flashrank_rerank import FlashrankRerank
 
 # Additional LangChain utilities
 from langchain.schema.retriever import BaseRetriever
@@ -181,8 +182,6 @@ class LangChainDocumentProcessor:
         return langchain_docs
 
 # --- NEW: EFFICIENT AND EFFECTIVE RAG PIPELINE ---
-from langchain.retrievers.document_compressors import FlashrankRerank
-
 class EfficientRAGPipeline:
     """A consolidated, efficient RAG pipeline using a Retrieve-Rerank strategy."""
     
