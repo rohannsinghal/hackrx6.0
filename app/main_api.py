@@ -144,21 +144,67 @@ class RAGPipeline:
         )
         logger.info(f"Finished adding {len(chunks)} chunks to collection '{self.collection_name}'")
 
-    def query_documents(self, query: str, n_results: int = 5) -> List[Dict]:
+    def query_documents(self, query: str, n_results: int = 10) -> List[Dict]:
         if not self.collection.count(): return []
         
-        results = self.collection.query(
-            # Use instance variable for the model
-            query_embeddings=self.embedding_model.encode([query]).tolist(),
-            n_results=min(n_results, self.collection.count()),
-            include=["documents", "metadatas"]
-        )
-        return [{"content": doc, "metadata": meta} for doc, meta in zip(results["documents"][0], results["metadatas"][0])]
+        # Enhanced query with multiple variations to improve retrieval
+        query_variations = [
+            query,
+            f"policy terms conditions {query}",
+            f"insurance coverage {query}",
+        ]
+        
+        all_results = []
+        seen_docs = set()
+        
+        for q in query_variations:
+            results = self.collection.query(
+                query_embeddings=self.embedding_model.encode([q]).tolist(),
+                n_results=min(n_results, self.collection.count()),
+                include=["documents", "metadatas", "distances"]
+            )
+            
+            for doc, meta, distance in zip(results["documents"][0], results["metadatas"][0], results["distances"][0]):
+                # Use distance threshold to ensure quality
+                if distance < 1.2 and doc not in seen_docs:  # Lower distance = better match
+                    all_results.append({
+                        "content": doc, 
+                        "metadata": meta,
+                        "distance": distance
+                    })
+                    seen_docs.add(doc)
+        
+        # Sort by relevance and return top results
+        all_results.sort(key=lambda x: x["distance"])
+        return all_results[:n_results]
 
     async def generate_answer(self, query: str, context_docs: List[Dict]) -> str:
-        context = "\n\n".join([f"--- REFERENCE TEXT ---\n{doc['content']}" for doc in context_docs])
-        system_prompt = "You are an expert AI assistant. Your task is to answer the user's question based *only* on the provided reference text. Do not use any outside knowledge. If the answer is not contained within the text, you must state 'The answer could not be found in the provided document.' Be concise and directly answer the question."
-        user_prompt = f"REFERENCE TEXT:\n{context}\n\nQUESTION: {query}"
+        # Sort context docs by relevance (distance) if available
+        if context_docs and 'distance' in context_docs[0]:
+            context_docs.sort(key=lambda x: x.get('distance', 0))
+        
+        # Use more context but prioritize most relevant chunks
+        context = ""
+        for i, doc in enumerate(context_docs[:8]):  # Use top 8 most relevant
+            context += f"--- DOCUMENT SECTION {i+1} ---\n{doc['content']}\n\n"
+        
+        system_prompt = """You are an expert insurance policy analyst. Your task is to provide precise, accurate answers based ONLY on the provided policy document sections.
+
+IMPORTANT INSTRUCTIONS:
+1. Answer directly and concisely - avoid unnecessary phrases like "According to the reference text"
+2. Include specific numbers, percentages, and timeframes when mentioned
+3. If multiple conditions exist, list them clearly
+4. For waiting periods, grace periods, limits - provide exact values
+5. If the answer is not in the documents, state "The information is not available in the provided policy document."
+6. Focus on the most specific and relevant information available
+7. When quoting policy terms, be precise with terminology"""
+        
+        user_prompt = f"""POLICY DOCUMENT SECTIONS:
+{context}
+
+QUESTION: {query}
+
+Provide a direct, accurate answer based on the policy document. Include specific details like timeframes, amounts, conditions, and percentages where available."""
         
         try:
             # Access the API key cycler from the app state
@@ -170,8 +216,9 @@ class RAGPipeline:
                 self.groq_client.chat.completions.create,
                 model="llama3-8b-8192",
                 messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
-                temperature=0.0,
-                max_tokens=300
+                temperature=0.1,  # Lower temperature for more consistent answers
+                max_tokens=400,   # Increased token limit
+                top_p=0.9
             )
             return response.choices[0].message.content.strip()
         except Exception as e:
