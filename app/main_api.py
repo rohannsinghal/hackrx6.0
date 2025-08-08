@@ -59,14 +59,38 @@ EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 CHROMA_PERSIST_DIR = "./app/chroma_db"
 UPLOAD_DIR = "/tmp/docs" # Use the writable temporary directory
 
-try:
-    embedding_model = SentenceTransformer(EMBEDDING_MODEL)
-    chroma_client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
-    # The client's API key will be updated per-request
-    groq_client = groq.Groq(api_key=get_next_api_key())
-    parsing_service = FastDocumentParserService()
-except Exception as e:
-    logger.error(f"FATAL: Could not initialize models. Error: {e}")
+# Startup event to initialize services
+@app.on_event("startup")
+async def startup_event():
+    """Initialize all services and store them in app state"""
+    try:
+        logger.info("Initializing services...")
+        
+        # Initialize embedding model
+        app.state.embedding_model = SentenceTransformer(EMBEDDING_MODEL)
+        logger.info("✅ Embedding model initialized")
+        
+        # Initialize Chroma client
+        app.state.chroma_client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
+        logger.info("✅ ChromaDB client initialized")
+        
+        # Initialize Groq client
+        app.state.groq_client = groq.Groq(api_key=get_next_api_key())
+        logger.info("✅ Groq client initialized")
+        
+        # Initialize parsing service
+        app.state.parsing_service = FastDocumentParserService()
+        logger.info("✅ Parsing service initialized")
+        
+        # Initialize API key cycler
+        app.state.api_key_cycler = api_key_cycler
+        logger.info("✅ API key cycler initialized")
+        
+        logger.info("🚀 All services initialized successfully!")
+        
+    except Exception as e:
+        logger.error(f"FATAL: Could not initialize services. Error: {e}")
+        raise e
 
 # Pydantic Models for Hackathon
 class SubmissionRequest(BaseModel):
@@ -82,7 +106,7 @@ class SubmissionResponse(BaseModel):
 
 class RAGPipeline:
     def __init__(self, collection_name: str, request: Request):
-        # --- FIX: Get models and clients from the app state via the request ---
+        # Access models and clients from the app state via the request
         self.collection_name = collection_name
         self.request = request
         self.chroma_client = request.app.state.chroma_client
@@ -127,7 +151,7 @@ class RAGPipeline:
         user_prompt = f"REFERENCE TEXT:\n{context}\n\nQUESTION: {query}"
         
         try:
-            # --- FIX: Access the API key cycler from the app state ---
+            # Access the API key cycler from the app state
             self.groq_client.api_key = next(self.request.app.state.api_key_cycler)
             logger.info(f"Using Groq API key ending in ...{self.groq_client.api_key[-4:]}")
             
@@ -147,7 +171,7 @@ class RAGPipeline:
 @app.post("/hackrx/run", response_model=SubmissionResponse)
 async def run_submission(request: Request, submission_request: SubmissionRequest = Body(...)):
     
-    # --- FIX: Access services from the application state via the request object ---
+    # Access services from the application state via the request object
     chroma_client = request.app.state.chroma_client
     parsing_service = request.app.state.parsing_service
 
@@ -160,7 +184,7 @@ async def run_submission(request: Request, submission_request: SubmissionRequest
         logger.warning(f"Could not clean up old collections: {e}")
 
     session_collection_name = f"hackrx_session_{uuid.uuid4().hex}"
-    # --- FIX: Pass the request object to the RAG pipeline ---
+    # Pass the request object to the RAG pipeline
     rag_pipeline = RAGPipeline(collection_name=session_collection_name, request=request)
     
     # 2. Download and Process Documents
