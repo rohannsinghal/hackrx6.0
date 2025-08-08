@@ -1,4 +1,4 @@
-# Enhanced main_api.py with LangChain integration
+# --- FINAL main_api.py ---
 
 import psutil
 import os
@@ -6,8 +6,7 @@ import json
 import uuid
 import time
 import re
-import numpy as np
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional
 import logging
 import asyncio
 from collections import defaultdict
@@ -15,42 +14,21 @@ from collections import defaultdict
 # FastAPI and core dependencies
 from fastapi import FastAPI, Body, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
-# LangChain imports - Core components
-from langchain.text_splitter import RecursiveCharacterTextSplitter, TokenTextSplitter
+# LangChain imports
 from langchain.embeddings import HuggingFaceEmbeddings
-from langchain.vectorstores import Chroma
-from langchain.retrievers import ContextualCompressionRetriever, EnsembleRetriever
-from langchain.retrievers.document_compressors import LLMChainExtractor
-from langchain.schema import Document
+from langchain_community.vectorstores import Chroma
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain.llms.base import LLM
 from langchain.callbacks.manager import CallbackManagerForLLMRun
-from langchain.retrievers.multi_query import MultiQueryRetriever
-from langchain.retrievers.contextual_compression import ContextualCompressionRetriever
-from langchain.retrievers.document_compressors import LLMChainFilter
-from langchain_community.document_compressors.flashrank_rerank import FlashrankRerank
-
-# Additional LangChain utilities
-from langchain.schema.retriever import BaseRetriever
 from langchain.schema.document import Document as LangChainDocument
-from langchain.retrievers.merger_retriever import MergerRetriever
-
-# Embeddings and Vector DB
-from sentence_transformers import SentenceTransformer
-import chromadb
 
 # LLM Integration
 import groq
 
-# ML Libraries for enhanced similarity
-from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.feature_extraction.text import TfidfVectorizer
-import Levenshtein
-
-# Document processing
+# Document processing and environment
 from .parser import FastDocumentParserService
 import httpx
 from dotenv import load_dotenv
@@ -60,164 +38,71 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="HackRx 6.0 LangChain Enhanced RAG System", version="LANGCHAIN_ENHANCED")
+app = FastAPI(title="Simplified and Corrected RAG System", version="1.0.0")
 
-# CORS
+# CORS Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
 
-# --- CUSTOM GROQ LLM FOR LANGCHAIN (Corrected) ---
+# --- CUSTOM GROQ LLM FOR LANGCHAIN ---
 class GroqLLM(LLM):
     """Custom Groq LLM wrapper for LangChain"""
-    
-    # Declare fields as class attributes
     groq_client: Any
     api_key_manager: Any
     
     class Config:
-        """Configuration for this Pydantic model."""
         arbitrary_types_allowed = True
         
     @property
     def _llm_type(self) -> str:
         return "groq"
     
-    def _call(
-        self,
-        prompt: str,
-        stop: Optional[List[str]] = None,
-        run_manager: Optional[CallbackManagerForLLMRun] = None,
-    ) -> str:
+    def _call(self, prompt: str, stop: Optional[List[str]] = None, run_manager: Optional[CallbackManagerForLLMRun] = None) -> str:
         try:
-            # Get next available API key
             api_key = self.api_key_manager.get_next_api_key()
             self.groq_client.api_key = api_key
-            
             response = self.groq_client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.05,
-                max_tokens=500,
-                top_p=0.85,
-                stop=stop
+                temperature=0.05, max_tokens=500, top_p=0.85, stop=stop
             )
             return response.choices[0].message.content.strip()
         except Exception as e:
             logger.error(f"Groq LLM call failed: {e}")
             return "Error generating response"
         
-
-# --- ENHANCED DOCUMENT PROCESSOR WITH LANGCHAIN ---
-class LangChainDocumentProcessor:
-    """Enhanced document processing with LangChain text splitters"""
+# --- THE SIMPLE AND RELIABLE RAG PIPELINE ---
+class LangChainRAGPipeline:
+    """A simplified and reliable RAG pipeline using standard LangChain components."""
     
-    def __init__(self):
-        # Initialize multiple text splitters for different strategies
-        self.recursive_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1500,
-            chunk_overlap=200,
-            length_function=len,
-            separators=["\n\n", "\n", ". ", " ", ""]
+    def __init__(self, collection_name: str, request: Request):
+        self.collection_name = collection_name
+        self.embedding_model = request.app.state.embedding_model
+        self.groq_llm = request.app.state.groq_llm
+        self.vectorstore = Chroma(
+            collection_name=collection_name,
+            embedding_function=self.embedding_model,
+            persist_directory=CHROMA_PERSIST_DIR
         )
-        
-        self.token_splitter = TokenTextSplitter(
-            chunk_size=400,  # Token-based chunking
-            chunk_overlap=50
-        )
-        
-        # Semantic splitter for better context preservation
-        self.semantic_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=2000,
-            chunk_overlap=300,
-            length_function=len,
-            separators=[
-                "\n\n### ",  # Section headers
-                "\n\n## ",   # Subsection headers
-                "\n\n",      # Paragraph breaks
-                "\n",        # Line breaks
-                ". ",        # Sentence breaks
-                " "          # Word breaks
-            ]
-        )
-        
-        logger.info("LangChain document processor initialized with multiple splitting strategies")
+        self.qa_chain = None
+        logger.info(f"✅ Simple RAG pipeline initialized for collection: {collection_name}")
     
-    def process_chunks_to_langchain_docs(self, chunks: List[Dict], split_strategy: str = "semantic") -> List[LangChainDocument]:
-        """Convert parsed chunks to LangChain documents with enhanced splitting"""
-        langchain_docs = []
+    def add_documents(self, chunks: List[Dict[str, Any]]):
+        """Adds documents to the vectorstore and creates the QA chain."""
+        if not chunks:
+            return
         
-        for chunk in chunks:
-            content = chunk['content'] if isinstance(chunk, dict) else chunk.content
-            metadata = chunk['metadata'] if isinstance(chunk, dict) else chunk.metadata
-            
-            # Create initial document
-            doc = LangChainDocument(
-                page_content=content,
-                metadata=metadata
-            )
-            
-            # Apply splitting strategy
-            if split_strategy == "recursive":
-                split_docs = self.recursive_splitter.split_documents([doc])
-            elif split_strategy == "token":
-                split_docs = self.token_splitter.split_documents([doc])
-            elif split_strategy == "semantic":
-                split_docs = self.semantic_splitter.split_documents([doc])
-            else:
-                split_docs = [doc]  # No splitting
-            
-            # Enhance metadata for each split
-            for i, split_doc in enumerate(split_docs):
-                split_doc.metadata.update({
-                    'split_index': i,
-                    'total_splits': len(split_docs),
-                    'split_strategy': split_strategy,
-                    'original_chunk_id': metadata.get('chunk_id', str(uuid.uuid4()))
-                })
-                langchain_docs.append(split_doc)
+        langchain_docs = [LangChainDocument(page_content=chunk['content'], metadata=chunk['metadata']) for chunk in chunks]
+        self.vectorstore.add_documents(langchain_docs)
         
-        logger.info(f"Processed {len(chunks)} chunks into {len(langchain_docs)} LangChain documents using {split_strategy} strategy")
-        return langchain_docs
-
-# --- NEW: EFFICIENT AND EFFECTIVE RAG PIPELINE ---
-class EfficientRAGPipeline:
-    """A consolidated, efficient RAG pipeline using a Retrieve-Rerank strategy."""
-    
-    def __init__(self, vectorstore: Chroma, llm: GroqLLM):
-        self.vectorstore = vectorstore
-        self.llm = llm
-        self.qa_chain = self._create_qa_chain()
+        retriever = self.vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 6})
         
-        logger.info("✅ EfficientRAGPipeline initialized with a Retrieve-Rerank strategy.")
-
-    def _create_qa_chain(self) -> RetrievalQA:
-        """Creates and configures the core RetrievalQA chain."""
-        
-        # 1. Base Retriever: Fetches a larger pool of documents (e.g., top 15)
-        base_retriever = self.vectorstore.as_retriever(
-            search_type="similarity",
-            search_kwargs={"k": 15} 
-        )
-        
-        # 2. Reranker: Uses a fast, local model to re-rank the top 15 docs
-        # and returns the top 5 most relevant ones.
-        reranker = FlashrankRerank(top_n=5)
-        
-        # 3. Compression Retriever: Combines the base retriever and reranker.
-        # This is the "Retrieve-then-Rerank" step.
-        compression_retriever = ContextualCompressionRetriever(
-            base_compressor=reranker,
-            base_retriever=base_retriever
-        )
-        
-        # 4. Prompt Template: The same effective prompt you already had.
         prompt_template = PromptTemplate(
             input_variables=["context", "question"],
             template="""You are an expert insurance policy analyst. Use the following pieces of context to answer the question at the end.
-Provide a direct and precise answer based ONLY on the provided context.
-If the answer is not in the context, state "The information is not available in the provided policy document."
+Provide a direct and precise answer based ONLY on the provided context. If the answer is not in the context, state "The information is not available in the provided policy document."
 
 Context:
 {context}
@@ -226,37 +111,30 @@ Question: {question}
 
 Answer:"""
         )
-
-        # 5. Create the final QA chain using the efficient retriever.
-        return RetrievalQA.from_chain_type(
-            llm=self.llm,
+        
+        self.qa_chain = RetrievalQA.from_chain_type(
+            llm=self.groq_llm,
             chain_type="stuff",
-            retriever=compression_retriever, # Using our efficient reranking retriever
-            chain_type_kwargs={"prompt": prompt_template},
-            return_source_documents=False
+            retriever=retriever,
+            chain_type_kwargs={"prompt": prompt_template}
         )
-        
+        logger.info(f"✅ QA Chain is ready.")
+    
     async def answer_question(self, question: str) -> str:
-        """Answers a question using the configured RAG chain."""
         if not self.qa_chain:
-            return "Error: QA chain is not initialized."
+            return "Error: QA chain not initialized. Please add documents first."
         
-        logger.info(f"🤔 Answering question with EfficientRAGPipeline: {question}")
-        
+        logger.info(f"🤔 Answering question with Simple RAG Pipeline: {question}")
         try:
-            # The chain runs synchronously, so we wrap it in asyncio.to_thread
-            result = await asyncio.to_thread(
-                self.qa_chain,
-                {"query": question}
-            )
-            return result.get("result", "Failed to get an answer from the chain.")
+            result = await asyncio.to_thread(self.qa_chain, {"query": question})
+            return result.get("result", "Failed to get an answer.")
         except Exception as e:
-            logger.error(f"Error during efficient QA chain execution: {e}")
+            logger.error(f"Error during QA chain execution: {e}")
             return "An error occurred while processing the question."
 
-
-# --- CONFIGURATION & MANAGERS ---
+# --- CONFIGURATION & API KEY MANAGER ---
 class GroqAPIKeyManager:
+    # (Your GroqAPIKeyManager code is correct, no changes needed here)
     def __init__(self, api_keys: List[str]):
         self.api_keys = [key.strip() for key in api_keys if key.strip()]
         self.key_usage_count = defaultdict(int)
@@ -264,40 +142,23 @@ class GroqAPIKeyManager:
         self.current_key_index = 0
         self.max_requests_per_key = 45
         logger.info(f"🔑 API Key Manager initialized with {len(self.api_keys)} keys")
-        
     def get_next_api_key(self):
         current_time = time.time()
-        
         for key in self.api_keys:
             if current_time - self.key_last_used[key] > 3600:
                 self.key_usage_count[key] = 0
-        
         best_key = min(self.api_keys, key=lambda k: self.key_usage_count[k])
-        
         if self.key_usage_count[best_key] >= self.max_requests_per_key:
             best_key = self.api_keys[self.current_key_index % len(self.api_keys)]
             self.current_key_index += 1
-        
         self.key_usage_count[best_key] += 1
         self.key_last_used[best_key] = current_time
-        
         return best_key
-    
     def get_key_stats(self):
-        return {
-            f"...{key[-4:]}": {
-                "usage_count": self.key_usage_count[key],
-                "last_used": self.key_last_used[key]
-            }
-            for key in self.api_keys
-        }
+        return {f"...{key[-4:]}": {"usage_count": self.key_usage_count[key], "last_used": self.key_last_used[key]} for key in self.api_keys}
 
-# Configuration
+# --- APP STARTUP & CONFIG ---
 GROQ_API_KEYS = os.getenv("GROQ_API_KEYS", "").split(',')
-if not all(GROQ_API_KEYS) or GROQ_API_KEYS == [""]:
-    logger.warning("GROQ_API_KEYS not found in .env file. Using placeholder.")
-    GROQ_API_KEYS = ["gsk_YourDefaultKeyHere"] 
-
 EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 CHROMA_PERSIST_DIR = "./app/chroma_db"
 UPLOAD_DIR = "/tmp/docs"
@@ -305,41 +166,21 @@ UPLOAD_DIR = "/tmp/docs"
 @app.on_event("startup")
 async def startup_event():
     try:
-        logger.info("Initializing LangChain enhanced services...")
-        
-        # Initialize embedding model for LangChain
+        logger.info("Initializing services...")
         app.state.embedding_model = HuggingFaceEmbeddings(
-            model_name=EMBEDDING_MODEL,
-            model_kwargs={'device': 'cpu'},
-            encode_kwargs={'normalize_embeddings': True}
+            model_name=EMBEDDING_MODEL, model_kwargs={'device': 'cpu'}, encode_kwargs={'normalize_embeddings': True}
         )
-        logger.info("✅ LangChain embeddings initialized")
-        
-        # Initialize API key manager and Groq client
         app.state.api_key_manager = GroqAPIKeyManager(GROQ_API_KEYS)
         first_key = app.state.api_key_manager.get_next_api_key()
         app.state.groq_client = groq.Groq(api_key=first_key)
-        
-        # Initialize custom Groq LLM for LangChain
-        # Corrected code
         app.state.groq_llm = GroqLLM(groq_client=app.state.groq_client, api_key_manager=app.state.api_key_manager)
-        logger.info("✅ Groq LLM wrapper initialized")
-        
-        # Initialize document processor
-        app.state.doc_processor = LangChainDocumentProcessor()
-        logger.info("✅ LangChain document processor initialized")
-        
-        # Initialize parsing service
         app.state.parsing_service = FastDocumentParserService()
-        logger.info("✅ Parsing service initialized")
-        
-        logger.info("🚀 All LangChain enhanced services initialized successfully!")
-        
+        logger.info("🚀 All services initialized successfully!")
     except Exception as e:
         logger.error(f"FATAL: Could not initialize services. Error: {e}")
         raise e
 
-# Pydantic Models
+# --- API MODELS ---
 class SubmissionRequest(BaseModel):
     documents: List[str]
     questions: List[str]
@@ -351,135 +192,47 @@ class Answer(BaseModel):
 class SubmissionResponse(BaseModel):
     answers: List[Answer]
 
-# In main_api.py, update the LangChainRAGPipeline class
-
-class LangChainRAGPipeline:
-    """Wrapper to manage the RAG pipeline for a session."""
-
-    def __init__(self, collection_name: str, request: Request):
-        self.collection_name = collection_name
-        self.embedding_model = request.app.state.embedding_model
-        self.groq_llm = request.app.state.groq_llm
-        self.doc_processor = request.app.state.doc_processor
-
-        self.vectorstore = Chroma(
-            collection_name=collection_name,
-            embedding_function=self.embedding_model,
-            persist_directory=CHROMA_PERSIST_DIR
-        )
-
-        self.rag_pipeline = None # Will be initialized after adding docs
-        logger.info(f"LangChain RAG pipeline initialized for collection: {collection_name}")
-
-    def add_documents(self, chunks: List[Any]):
-        if not chunks:
-            return
-
-        langchain_docs = self.doc_processor.process_chunks_to_langchain_docs(chunks, "recursive")
-        self.vectorstore.add_documents(langchain_docs)
-
-        # Initialize our new, efficient pipeline here
-        self.rag_pipeline = EfficientRAGPipeline(self.vectorstore, self.groq_llm)
-        logger.info(f"✅ EfficientRAGPipeline is ready.")
-
-    async def answer_question(self, question: str) -> str:
-        if not self.rag_pipeline:
-            return "Error: RAG pipeline not initialized. Please add documents first."
-
-        return await self.rag_pipeline.answer_question(question)
-
+# --- API ENDPOINTS ---
 @app.post("/hackrx/run", response_model=SubmissionResponse)
 async def run_submission(request: Request, submission_request: SubmissionRequest = Body(...)):
-    
     parsing_service = request.app.state.parsing_service
-
-    # Cleanup old collections
-    try:
-        import shutil
-        old_dirs = [d for d in os.listdir(CHROMA_PERSIST_DIR) if d.startswith("hackrx_session_")]
-        for old_dir in old_dirs:
-            shutil.rmtree(os.path.join(CHROMA_PERSIST_DIR, old_dir), ignore_errors=True)
-    except Exception as e:
-        logger.warning(f"Could not clean up old collections: {e}")
-
     session_collection_name = f"hackrx_session_{uuid.uuid4().hex}"
     rag_pipeline = LangChainRAGPipeline(collection_name=session_collection_name, request=request)
-    
-    # Process documents
     all_chunks = []
-    
+
     async with httpx.AsyncClient(timeout=120.0) as client:
         for doc_url in submission_request.documents:
             try:
                 logger.info(f"📥 Downloading document from: {doc_url}")
                 response = await client.get(doc_url, follow_redirects=True)
                 response.raise_for_status()
-                
                 file_name = os.path.basename(doc_url.split('?')[0])
                 temp_file_path = os.path.join(UPLOAD_DIR, f"temp_{uuid.uuid4()}_{file_name}")
                 os.makedirs(UPLOAD_DIR, exist_ok=True)
-                
                 with open(temp_file_path, "wb") as f:
                     f.write(response.content)
                 
-                # Parse document
                 chunks = parsing_service.process_pdf_ultrafast(temp_file_path)
-                chunk_dicts = [chunk.to_dict() for chunk in chunks]
-                all_chunks.extend(chunk_dicts)
+                all_chunks.extend([chunk.to_dict() for chunk in chunks])
                 os.remove(temp_file_path)
-                
                 logger.info(f"✅ Processed {len(chunks)} chunks from {file_name}")
-
             except Exception as e:
                 logger.error(f"❌ Failed to process document at {doc_url}: {e}")
                 continue
     
     if not all_chunks:
-        failed_answers = [
-            Answer(
-                question=q, 
-                answer="A valid document could not be processed, so an answer could not be found."
-            ) 
-            for q in submission_request.questions
-        ]
+        failed_answers = [Answer(question=q, answer="A valid document could not be processed.") for q in submission_request.questions]
         return SubmissionResponse(answers=failed_answers)
 
-    # Add documents to LangChain pipeline
     rag_pipeline.add_documents(all_chunks)
 
-    # Answer all questions using LangChain
-    async def process_question(question: str):
-        logger.info(f"🔍 Processing: {question}")
-        answer_text = await rag_pipeline.answer_question(question)
-        return Answer(question=question, answer=answer_text)
-
-    # Process all questions
-    tasks = [process_question(q) for q in submission_request.questions]
-    answers = await asyncio.gather(*tasks)
+    tasks = [rag_pipeline.answer_question(q) for q in submission_request.questions]
+    results = await asyncio.gather(*tasks)
+    answers = [Answer(question=q, answer=ans) for q, ans in zip(submission_request.questions, results)]
 
     logger.info(f"🎯 Successfully processed {len(answers)} questions")
     return SubmissionResponse(answers=answers)
 
-@app.get("/debug/api-keys")
-async def get_api_key_stats(request: Request):
-    try:
-        stats = request.app.state.api_key_manager.get_key_stats()
-        return {
-            "total_keys": len(request.app.state.api_key_manager.api_keys),
-            "key_usage": stats
-        }
-    except Exception as e:
-        logger.error(f"Error getting API key stats: {e}")
-        return {"error": "Could not retrieve API key statistics"}
-
 @app.get("/")
 def read_root():
-    return {"message": "LangChain Enhanced HackRx 6.0 RAG System is running. See /docs for API details."}
-
-@app.get("/memory")
-def get_memory_usage():
-    process = psutil.Process(os.getpid())
-    mem_info = process.memory_info()
-    return {
-        "memory_usage_mb": mem_info.rss / (1024 * 1024)
-    }
+    return {"message": "LangChain Enhanced RAG System is running."}
