@@ -3,10 +3,12 @@ import psutil
 import os
 import json
 import uuid
+import time
+import re
 from typing import List, Dict, Any, Optional
 import logging
 import asyncio
-from itertools import cycle
+from collections import defaultdict
 
 # FastAPI and core dependencies
 from fastapi import FastAPI, Body, HTTPException, Request
@@ -42,22 +44,114 @@ app.add_middleware(
     allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
 
+# --- NEW: API KEY MANAGER CLASS ---
+class GroqAPIKeyManager:
+    def __init__(self, api_keys: List[str]):
+        self.api_keys = [key.strip() for key in api_keys if key.strip()]  # Clean keys
+        self.key_usage_count = defaultdict(int)
+        self.key_last_used = defaultdict(float)
+        self.current_key_index = 0
+        self.max_requests_per_key = 45  # Conservative limit per hour (Groq free tier is ~100)
+        logger.info(f"🔑 API Key Manager initialized with {len(self.api_keys)} keys")
+        
+    def get_next_api_key(self):
+        """Get the next available API key with smart rotation"""
+        current_time = time.time()
+        
+        # Reset counters every hour
+        for key in self.api_keys:
+            if current_time - self.key_last_used[key] > 3600:  # 1 hour
+                self.key_usage_count[key] = 0
+        
+        # Find the key with lowest usage
+        best_key = min(self.api_keys, 
+                      key=lambda k: self.key_usage_count[k])
+        
+        # If all keys are at limit, use round-robin as fallback
+        if self.key_usage_count[best_key] >= self.max_requests_per_key:
+            best_key = self.api_keys[self.current_key_index % len(self.api_keys)]
+            self.current_key_index += 1
+        
+        # Update usage tracking
+        self.key_usage_count[best_key] += 1
+        self.key_last_used[best_key] = current_time
+        
+        return best_key
+    
+    def get_key_stats(self):
+        """Get usage statistics for all keys"""
+        return {
+            f"...{key[-4:]}": {
+                "usage_count": self.key_usage_count[key],
+                "last_used": self.key_last_used[key]
+            }
+            for key in self.api_keys
+        }
+
+# --- NEW: RESPONSE CLEANER CLASS ---
+class ResponseCleaner:
+    """Clean and format RAG responses for better readability"""
+    
+    def __init__(self):
+        # Patterns to remove
+        self.removal_patterns = [
+            r'Document Section \d+[,\s]*',  # Remove "Document Section X"
+            r'Section \d+\.\d+[,\s]*',      # Remove "Section X.X"
+            r'\*\*.*?\*\*',                 # Remove bold markdown
+            r'According to [^,]*,\s*',      # Remove "According to..."
+            r'The policy document states[^,]*,\s*',  # Remove policy document references
+            r'As mentioned in [^,]*,\s*',   # Remove "As mentioned in..."
+            r'Based on [^,]*,\s*',          # Remove "Based on..."
+            r'Additionally,\s*',            # Remove "Additionally,"
+            r'Furthermore,\s*',             # Remove "Furthermore,"
+            r'Moreover,\s*',                # Remove "Moreover,"
+        ]
+    
+    def clean_response(self, response: str) -> str:
+        """Clean and format a response"""
+        if not response or response.strip() == "":
+            return "The information is not available in the provided policy document."
+        
+        cleaned = response
+        
+        # Step 1: Remove escaped characters and newlines
+        cleaned = cleaned.replace('\\n', ' ')
+        cleaned = cleaned.replace('\\t', ' ')
+        cleaned = cleaned.replace('\\"', '"')
+        cleaned = re.sub(r'\n+', ' ', cleaned)  # Multiple newlines to single space
+        cleaned = re.sub(r'\s+', ' ', cleaned)  # Multiple spaces to single space
+        
+        # Step 2: Remove unwanted patterns
+        for pattern in self.removal_patterns:
+            cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+        
+        # Step 3: Fix formatting issues
+        cleaned = re.sub(r',\s*,', ',', cleaned)  # Double commas
+        cleaned = re.sub(r'\s*,\s*', ', ', cleaned)  # Space around commas
+        cleaned = re.sub(r'\s*\.\s*', '. ', cleaned)  # Space around periods
+        cleaned = re.sub(r'\s+([.,:;!?])', r'\1', cleaned)  # Remove space before punctuation
+        cleaned = re.sub(r'([.!?])\s*([A-Z])', r'\1 \2', cleaned)  # Ensure space after sentence end
+        
+        # Step 4: Capitalize first letter and ensure proper ending
+        cleaned = cleaned.strip()
+        if cleaned and len(cleaned) > 0:
+            cleaned = cleaned[0].upper() + cleaned[1:] if len(cleaned) > 1 else cleaned.upper()
+        
+        if cleaned and not cleaned.endswith(('.', '!', '?')):
+            cleaned += '.'
+        
+        return cleaned.strip()
+
 # --- CONFIGURATION & INITIALIZATION ---
-# API Key Rotation Setup
+# API Key Setup
 GROQ_API_KEYS = os.getenv("GROQ_API_KEYS", "").split(',')
-if not all(GROQ_API_KEYS):
+if not all(GROQ_API_KEYS) or GROQ_API_KEYS == [""]:
     logger.warning("GROQ_API_KEYS not found in .env file. Using placeholder.")
-    # Provide a fallback or raise an error if keys are essential
     GROQ_API_KEYS = ["gsk_YourDefaultKeyHere"] 
-
-api_key_cycler = cycle(GROQ_API_KEYS)
-
-def get_next_api_key():
-    return next(api_key_cycler)
 
 EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 CHROMA_PERSIST_DIR = "./app/chroma_db"
-UPLOAD_DIR = "/tmp/docs" # Use the writable temporary directory
+UPLOAD_DIR = "/tmp/docs"
 
 # Startup event to initialize services
 @app.on_event("startup")
@@ -74,17 +168,22 @@ async def startup_event():
         app.state.chroma_client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
         logger.info("✅ ChromaDB client initialized")
         
-        # Initialize Groq client
-        app.state.groq_client = groq.Groq(api_key=get_next_api_key())
+        # Initialize enhanced API key manager
+        app.state.api_key_manager = GroqAPIKeyManager(GROQ_API_KEYS)
+        logger.info(f"✅ API key manager initialized with {len(GROQ_API_KEYS)} keys")
+        
+        # Initialize Groq client with first key
+        first_key = app.state.api_key_manager.get_next_api_key()
+        app.state.groq_client = groq.Groq(api_key=first_key)
         logger.info("✅ Groq client initialized")
         
         # Initialize parsing service
         app.state.parsing_service = FastDocumentParserService()
         logger.info("✅ Parsing service initialized")
         
-        # Initialize API key cycler
-        app.state.api_key_cycler = api_key_cycler
-        logger.info("✅ API key cycler initialized")
+        # Initialize response cleaner
+        app.state.response_cleaner = ResponseCleaner()
+        logger.info("✅ Response cleaner initialized")
         
         logger.info("🚀 All services initialized successfully!")
         
@@ -191,36 +290,50 @@ class RAGPipeline:
         system_prompt = """You are an expert insurance policy analyst. Your task is to provide precise, accurate answers based ONLY on the provided policy document sections.
 
 IMPORTANT INSTRUCTIONS:
-1. Answer directly and concisely - avoid unnecessary phrases like "According to the reference text"
+1. Answer directly and concisely - avoid unnecessary phrases
 2. Include specific numbers, percentages, and timeframes when mentioned
 3. If multiple conditions exist, list them clearly
 4. For waiting periods, grace periods, limits - provide exact values
 5. If the answer is not in the documents, state "The information is not available in the provided policy document."
 6. Focus on the most specific and relevant information available
-7. When quoting policy terms, be precise with terminology"""
+7. When quoting policy terms, be precise with terminology
+8. Remove any formatting characters like \\n from your response
+9. Do not include section headings or reference markers in your final answer
+10. Provide clean, readable text without markdown or special characters"""
         
         user_prompt = f"""POLICY DOCUMENT SECTIONS:
 {context}
 
 QUESTION: {query}
 
-Provide a direct, accurate answer based on the policy document. Include specific details like timeframes, amounts, conditions, and percentages where available."""
+Provide a direct, accurate answer based on the policy document. Include specific details like timeframes, amounts, conditions, and percentages where available. Make sure your response is clean and readable without any formatting characters."""
         
         try:
-            # Access the API key cycler from the app state
-            self.groq_client.api_key = next(self.request.app.state.api_key_cycler)
-            logger.info(f"Using Groq API key ending in ...{self.groq_client.api_key[-4:]}")
+            # Get next available API key using the manager
+            api_key = self.request.app.state.api_key_manager.get_next_api_key()
+            self.groq_client.api_key = api_key
+            logger.info(f"Using Groq API key ending in ...{api_key[-4:]}")
             
             response = await asyncio.to_thread(
-                # Use instance variable for the client
                 self.groq_client.chat.completions.create,
-                model="llama3-8b-8192",
-                messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
-                temperature=0.1,  # Lower temperature for more consistent answers
-                max_tokens=400,   # Increased token limit
-                top_p=0.9
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": system_prompt}, 
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.05,  # Even lower for more consistency
+                max_tokens=400,
+                top_p=0.85
             )
-            return response.choices[0].message.content.strip()
+            
+            # Get raw response
+            raw_answer = response.choices[0].message.content.strip()
+            
+            # Clean the response using the ResponseCleaner
+            cleaned_answer = self.request.app.state.response_cleaner.clean_response(raw_answer)
+            
+            return cleaned_answer
+            
         except Exception as e:
             logger.error(f"Groq API call failed: {e}")
             return "Error: Could not generate an answer from the language model."
@@ -246,8 +359,6 @@ async def run_submission(request: Request, submission_request: SubmissionRequest
     
     # 2. Download and Process Documents
     all_chunks = []
-    # The UPLOAD_DIR variable should be defined at the top of your file
-    UPLOAD_DIR = "/tmp/docs" 
     
     async with httpx.AsyncClient(timeout=120.0) as client:
         for doc_url in submission_request.documents:
@@ -290,6 +401,20 @@ async def run_submission(request: Request, submission_request: SubmissionRequest
     answers = await asyncio.gather(*tasks)
 
     return SubmissionResponse(answers=answers)
+
+# NEW: Debug endpoint to check API key usage
+@app.get("/debug/api-keys")
+async def get_api_key_stats(request: Request):
+    """Get API key usage statistics"""
+    try:
+        stats = request.app.state.api_key_manager.get_key_stats()
+        return {
+            "total_keys": len(request.app.state.api_key_manager.api_keys),
+            "key_usage": stats
+        }
+    except Exception as e:
+        logger.error(f"Error getting API key stats: {e}")
+        return {"error": "Could not retrieve API key statistics"}
 
 @app.get("/")
 def read_root():
