@@ -202,8 +202,7 @@ class AdvancedLangChainRetriever:
         # Multi-query retriever for query expansion
         self.multi_query_retriever = MultiQueryRetriever.from_llm(
             retriever=self.similarity_retriever,
-            llm=llm,
-            verbose=True
+            llm=llm
         )
         
         # Ensemble retriever combining multiple strategies
