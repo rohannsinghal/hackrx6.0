@@ -215,6 +215,8 @@ async def run_submission(request: Request, submission_request: SubmissionRequest
                 with open(temp_file_path, "wb") as f:
                     f.write(response.content)
                 
+                # This call now correctly uses the parsing_service loaded in the app state
+                chunks = parsing_service.process_pdf_ultrafast(temp_file_path)
                 # Convert DocumentChunk objects to dictionaries for the RAG pipeline
                 chunk_dicts = [chunk.to_dict() for chunk in chunks]
                 all_chunks.extend(chunk_dicts)
