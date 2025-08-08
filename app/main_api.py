@@ -67,17 +67,18 @@ app.add_middleware(
     allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
 
-# --- CUSTOM GROQ LLM FOR LANGCHAIN ---
+# --- CUSTOM GROQ LLM FOR LANGCHAIN (Corrected) ---
 class GroqLLM(LLM):
     """Custom Groq LLM wrapper for LangChain"""
-
-    groq_client = any
-    api_key_manager = any
-        
+    
+    # Declare fields as class attributes
+    groq_client: Any
+    api_key_manager: Any
+    
     class Config:
         """Configuration for this Pydantic model."""
         arbitrary_types_allowed = True
-    
+        
     @property
     def _llm_type(self) -> str:
         return "groq"
@@ -105,6 +106,7 @@ class GroqLLM(LLM):
         except Exception as e:
             logger.error(f"Groq LLM call failed: {e}")
             return "Error generating response"
+        
 
 # --- ENHANCED DOCUMENT PROCESSOR WITH LANGCHAIN ---
 class LangChainDocumentProcessor:
