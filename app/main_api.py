@@ -180,197 +180,81 @@ class LangChainDocumentProcessor:
         logger.info(f"Processed {len(chunks)} chunks into {len(langchain_docs)} LangChain documents using {split_strategy} strategy")
         return langchain_docs
 
-# --- ADVANCED RETRIEVER WITH LANGCHAIN ---
-class AdvancedLangChainRetriever:
-    """Advanced retriever using LangChain's sophisticated retrieval methods"""
+# --- NEW: EFFICIENT AND EFFECTIVE RAG PIPELINE ---
+from langchain.retrievers.document_compressors import FlashrankRerank
+
+class EfficientRAGPipeline:
+    """A consolidated, efficient RAG pipeline using a Retrieve-Rerank strategy."""
     
     def __init__(self, vectorstore: Chroma, llm: GroqLLM):
         self.vectorstore = vectorstore
         self.llm = llm
+        self.qa_chain = self._create_qa_chain()
         
-        # Base retrievers
-        self.similarity_retriever = vectorstore.as_retriever(
+        logger.info("✅ EfficientRAGPipeline initialized with a Retrieve-Rerank strategy.")
+
+    def _create_qa_chain(self) -> RetrievalQA:
+        """Creates and configures the core RetrievalQA chain."""
+        
+        # 1. Base Retriever: Fetches a larger pool of documents (e.g., top 15)
+        base_retriever = self.vectorstore.as_retriever(
             search_type="similarity",
-            search_kwargs={"k": 8}
+            search_kwargs={"k": 15} 
         )
         
-        self.mmr_retriever = vectorstore.as_retriever(
-            search_type="mmr",  # Maximum Marginal Relevance
-            search_kwargs={"k": 8, "fetch_k": 20}
+        # 2. Reranker: Uses a fast, local model to re-rank the top 15 docs
+        # and returns the top 5 most relevant ones.
+        reranker = FlashrankRerank(top_n=5)
+        
+        # 3. Compression Retriever: Combines the base retriever and reranker.
+        # This is the "Retrieve-then-Rerank" step.
+        compression_retriever = ContextualCompressionRetriever(
+            base_compressor=reranker,
+            base_retriever=base_retriever
         )
         
-        # Multi-query retriever for query expansion
-        self.multi_query_retriever = MultiQueryRetriever.from_llm(
-            retriever=self.similarity_retriever,
-            llm=llm
-        )
-        
-        # Ensemble retriever combining multiple strategies
-        self.ensemble_retriever = EnsembleRetriever(
-            retrievers=[self.similarity_retriever, self.mmr_retriever],
-            weights=[0.6, 0.4]  # Weight similarity higher than MMR
-        )
-        
-        # Contextual compression retriever
-        self.compression_retriever = ContextualCompressionRetriever(
-            base_compressor=LLMChainFilter.from_llm(llm),
-            base_retriever=self.ensemble_retriever
-        )
-        
-        logger.info("Advanced LangChain retriever initialized with multiple retrieval strategies")
-    
-    async def retrieve_documents(self, query: str, strategy: str = "ensemble", k: int = 10) -> List[LangChainDocument]:
-        """Retrieve documents using specified strategy"""
-        try:
-            if strategy == "similarity":
-                docs = await asyncio.to_thread(
-                    self.similarity_retriever.get_relevant_documents, query
-                )
-            elif strategy == "mmr":
-                docs = await asyncio.to_thread(
-                    self.mmr_retriever.get_relevant_documents, query
-                )
-            elif strategy == "multi_query":
-                docs = await asyncio.to_thread(
-                    self.multi_query_retriever.get_relevant_documents, query
-                )
-            elif strategy == "ensemble":
-                docs = await asyncio.to_thread(
-                    self.ensemble_retriever.get_relevant_documents, query
-                )
-            elif strategy == "compression":
-                docs = await asyncio.to_thread(
-                    self.compression_retriever.get_relevant_documents, query
-                )
-            else:
-                docs = await asyncio.to_thread(
-                    self.ensemble_retriever.get_relevant_documents, query
-                )
-            
-            # Limit results
-            docs = docs[:k]
-            
-            logger.info(f"Retrieved {len(docs)} documents using {strategy} strategy for query: '{query}'")
-            return docs
-            
-        except Exception as e:
-            logger.error(f"Document retrieval failed with strategy {strategy}: {e}")
-            # Fallback to simple similarity search
-            try:
-                docs = await asyncio.to_thread(
-                    self.similarity_retriever.get_relevant_documents, query
-                )
-                return docs[:k]
-            except Exception as e2:
-                logger.error(f"Fallback retrieval also failed: {e2}")
-                return []
-
-# --- INTELLIGENT QA CHAIN WITH LANGCHAIN ---
-class IntelligentQAChain:
-    """Intelligent QA chain with LangChain prompt engineering"""
-    
-    def __init__(self, retriever: AdvancedLangChainRetriever, llm: GroqLLM):
-        self.retriever = retriever
-        self.llm = llm
-        
-        # Custom prompt template for insurance policy questions
-        self.prompt_template = PromptTemplate(
+        # 4. Prompt Template: The same effective prompt you already had.
+        prompt_template = PromptTemplate(
             input_variables=["context", "question"],
-            template="""You are an expert insurance policy analyst with deep understanding of policy documents and insurance terminology.
+            template="""You are an expert insurance policy analyst. Use the following pieces of context to answer the question at the end.
+Provide a direct and precise answer based ONLY on the provided context.
+If the answer is not in the context, state "The information is not available in the provided policy document."
 
-Context Information (ranked by relevance):
+Context:
 {context}
 
 Question: {question}
 
-Instructions:
-1. Analyze the provided context carefully, paying attention to the most relevant sections
-2. Provide a direct, precise answer based ONLY on the context provided
-3. Include specific details like:
-   - Exact timeframes (days, months, years)
-   - Specific amounts or percentages
-   - Conditions and requirements
-   - Exclusions or limitations
-   - Special circumstances or exceptions
-
-4. If the information is not available in the context, clearly state: "The information is not available in the provided policy document."
-
-5. For complex questions, structure your answer clearly with relevant details
-6. Use professional insurance terminology where appropriate
-7. Ensure your answer is complete and addresses all parts of the question
-
 Answer:"""
         )
+
+        # 5. Create the final QA chain using the efficient retriever.
+        return RetrievalQA.from_chain_type(
+            llm=self.llm,
+            chain_type="stuff",
+            retriever=compression_retriever, # Using our efficient reranking retriever
+            chain_type_kwargs={"prompt": prompt_template},
+            return_source_documents=False
+        )
         
-        logger.info("Intelligent QA chain initialized with custom insurance prompt template")
-    
     async def answer_question(self, question: str) -> str:
-        """Answer question using advanced retrieval and LangChain QA"""
+        """Answers a question using the configured RAG chain."""
+        if not self.qa_chain:
+            return "Error: QA chain is not initialized."
+        
+        logger.info(f"🤔 Answering question with EfficientRAGPipeline: {question}")
+        
         try:
-            # Step 1: Retrieve relevant documents using ensemble approach
-            relevant_docs = await self.retriever.retrieve_documents(
-                question, 
-                strategy="ensemble",  # Use ensemble for balanced results
-                k=12
+            # The chain runs synchronously, so we wrap it in asyncio.to_thread
+            result = await asyncio.to_thread(
+                self.qa_chain,
+                {"query": question}
             )
-            
-            if not relevant_docs:
-                return "The information is not available in the provided policy document."
-            
-            # Step 2: Prepare context with relevance scoring
-            context_parts = []
-            for i, doc in enumerate(relevant_docs):
-                # Add document with metadata
-                metadata_info = ""
-                if doc.metadata:
-                    source = doc.metadata.get('source', 'Unknown')
-                    metadata_info = f" [Source: {source}]"
-                
-                context_parts.append(
-                    f"--- SECTION {i+1} ---{metadata_info}\n{doc.page_content}\n"
-                )
-            
-            context = "\n".join(context_parts)
-            
-            # Step 3: Generate answer using custom prompt
-            prompt = self.prompt_template.format(
-                context=context,
-                question=question
-            )
-            
-            answer = await asyncio.to_thread(self.llm._call, prompt)
-            
-            # Step 4: Clean and validate answer
-            cleaned_answer = self._clean_answer(answer)
-            
-            logger.info(f"Generated answer for question: '{question}' (length: {len(cleaned_answer)} chars)")
-            return cleaned_answer
-            
+            return result.get("result", "Failed to get an answer from the chain.")
         except Exception as e:
-            logger.error(f"QA chain failed for question '{question}': {e}")
-            return "Error: Could not generate an answer due to processing issues."
-    
-    def _clean_answer(self, answer: str) -> str:
-        """Clean and format the generated answer"""
-        if not answer or answer.strip() == "":
-            return "The information is not available in the provided policy document."
-        
-        # Remove common artifacts
-        cleaned = answer.strip()
-        cleaned = re.sub(r'\n+', ' ', cleaned)
-        cleaned = re.sub(r'\s+', ' ', cleaned)
-        cleaned = cleaned.replace('\\n', ' ')
-        cleaned = cleaned.replace('\\t', ' ')
-        
-        # Ensure proper capitalization
-        if cleaned and len(cleaned) > 0:
-            cleaned = cleaned[0].upper() + cleaned[1:] if len(cleaned) > 1 else cleaned.upper()
-        
-        # Ensure proper ending
-        if cleaned and not cleaned.endswith(('.', '!', '?')):
-            cleaned += '.'
-        
-        return cleaned
+            logger.error(f"Error during efficient QA chain execution: {e}")
+            return "An error occurred while processing the question."
+
 
 # --- CONFIGURATION & MANAGERS ---
 class GroqAPIKeyManager:
@@ -468,59 +352,42 @@ class Answer(BaseModel):
 class SubmissionResponse(BaseModel):
     answers: List[Answer]
 
+# In main_api.py, update the LangChainRAGPipeline class
+
 class LangChainRAGPipeline:
-    """Complete RAG pipeline using LangChain components"""
-    
+    """Wrapper to manage the RAG pipeline for a session."""
+
     def __init__(self, collection_name: str, request: Request):
         self.collection_name = collection_name
-        self.request = request
         self.embedding_model = request.app.state.embedding_model
         self.groq_llm = request.app.state.groq_llm
         self.doc_processor = request.app.state.doc_processor
-        
-        # Initialize Chroma vectorstore
+
         self.vectorstore = Chroma(
             collection_name=collection_name,
             embedding_function=self.embedding_model,
             persist_directory=CHROMA_PERSIST_DIR
         )
-        
-        self.retriever = None
-        self.qa_chain = None
-        
+
+        self.rag_pipeline = None # Will be initialized after adding docs
         logger.info(f"LangChain RAG pipeline initialized for collection: {collection_name}")
-    
+
     def add_documents(self, chunks: List[Any]):
-        """Add documents to the LangChain vectorstore"""
         if not chunks:
-            logger.warning("No chunks provided to add_documents.")
             return
-        
-        logger.info(f"Processing {len(chunks)} chunks with LangChain...")
-        
-        # Convert to LangChain documents with enhanced splitting
-        langchain_docs = self.doc_processor.process_chunks_to_langchain_docs(
-            chunks, 
-            split_strategy="semantic"
-        )
-        
-        # Add to vectorstore
+
+        langchain_docs = self.doc_processor.process_chunks_to_langchain_docs(chunks, "recursive")
         self.vectorstore.add_documents(langchain_docs)
-        
-        # Initialize retriever and QA chain
-        self.retriever = AdvancedLangChainRetriever(self.vectorstore, self.groq_llm)
-        self.qa_chain = IntelligentQAChain(self.retriever, self.groq_llm)
-        
-        logger.info(f"✅ Added {len(langchain_docs)} documents to LangChain vectorstore")
-    
+
+        # Initialize our new, efficient pipeline here
+        self.rag_pipeline = EfficientRAGPipeline(self.vectorstore, self.groq_llm)
+        logger.info(f"✅ EfficientRAGPipeline is ready.")
+
     async def answer_question(self, question: str) -> str:
-        """Answer question using the LangChain QA chain"""
-        if not self.qa_chain:
-            return "Error: QA chain not initialized. Please add documents first."
-        
-        logger.info(f"🤔 Answering question with LangChain: {question}")
-        answer = await self.qa_chain.answer_question(question)
-        return answer
+        if not self.rag_pipeline:
+            return "Error: RAG pipeline not initialized. Please add documents first."
+
+        return await self.rag_pipeline.answer_question(question)
 
 @app.post("/hackrx/run", response_model=SubmissionResponse)
 async def run_submission(request: Request, submission_request: SubmissionRequest = Body(...)):
