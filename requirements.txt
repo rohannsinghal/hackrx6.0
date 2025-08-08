@@ -7,6 +7,8 @@ pydantic==2.5.1
 httpx==0.25.2
 python-dotenv==1.0.0
 psutil==5.9.6
+python-multipart
+
 
 # Document processing
 PyMuPDF==1.23.8
