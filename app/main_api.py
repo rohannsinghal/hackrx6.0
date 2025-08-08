@@ -314,7 +314,7 @@ class EmbeddedDocumentParser:
                         "document_type": "pdf_improved",
                         "has_tables": has_tables,
                         "total_pages": total_pages,
-                        "key_terms": key_terms,
+                        "key_terms": ", ".join(key_terms),
                         "content_type": "table" if has_tables else "text",
                         "chunk_length": len(chunk_text)
                     },
