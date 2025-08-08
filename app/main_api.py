@@ -433,7 +433,8 @@ async def startup_event():
         app.state.groq_client = groq.Groq(api_key=first_key)
         
         # Initialize custom Groq LLM for LangChain
-        app.state.groq_llm = GroqLLM(app.state.groq_client, app.state.api_key_manager)
+        # Corrected code
+        app.state.groq_llm = GroqLLM(groq_client=app.state.groq_client, api_key_manager=app.state.api_key_manager)
         logger.info("✅ Groq LLM wrapper initialized")
         
         # Initialize document processor
