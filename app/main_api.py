@@ -70,11 +70,9 @@ app.add_middleware(
 # --- CUSTOM GROQ LLM FOR LANGCHAIN ---
 class GroqLLM(LLM):
     """Custom Groq LLM wrapper for LangChain"""
-    
-    def __init__(self, groq_client, api_key_manager):
-        super().__init__()
-        self.groq_client = groq_client
-        self.api_key_manager = api_key_manager
+
+    groq_client = any
+    api_key_manager = any
         
     @property
     def _llm_type(self) -> str:
