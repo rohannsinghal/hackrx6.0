@@ -419,6 +419,39 @@ class OptimizedSemanticRAGPipeline:
         self.qa_chain = None
         logger.info(f"✅ Optimized semantic RAG pipeline initialized: {collection_name}")
 
+    def clean_response(self, answer: str) -> str:
+        """Clean up the response formatting for better readability"""
+        if not answer:
+            return answer
+        
+        # Remove excessive newlines
+        answer = re.sub(r'\n\s*\n\s*\n+', '\n\n', answer)  # Multiple newlines to double
+        answer = re.sub(r'\n\s*\n', '\n\n', answer)  # Ensure consistent double newlines for paragraphs
+        
+        # Remove quotes around single words and short phrases
+        answer = re.sub(r'"([A-Z\s]{2,20})"', r'\1', answer)  # Remove quotes from short caps phrases
+        answer = re.sub(r'"(\w+)"', r'\1', answer)  # Remove quotes from single words
+        answer = re.sub(r'"(Rs\. [\d,]+[/-]*)"', r'\1', answer)  # Remove quotes from amounts
+        answer = re.sub(r'"(\d+%)"', r'\1', answer)  # Remove quotes from percentages
+        answer = re.sub(r'"(\d+ (?:days?|months?|years?))"', r'\1', answer)  # Remove quotes from time periods
+        
+        # Clean up policy references - keep important quotes but make them flow better
+        answer = re.sub(r'As stated in the policy: "([^"]+)"', r'The policy states that \1', answer)
+        answer = re.sub(r'According to the policy document: "([^"]+)"', r'According to the policy document, \1', answer)
+        answer = re.sub(r'The policy states: "([^"]+)"', r'The policy states that \1', answer)
+        answer = re.sub(r'As per the policy: "([^"]+)"', r'As per the policy, \1', answer)
+        
+        # Fix spacing and formatting
+        answer = re.sub(r'\s+', ' ', answer)  # Multiple spaces to single space
+        answer = answer.replace(' ,', ',')  # Fix spacing before commas
+        answer = answer.replace(' .', '.')  # Fix spacing before periods
+        answer = answer.strip()  # Remove leading/trailing whitespace
+        
+        # Clean up excessive line breaks in the middle of sentences
+        answer = re.sub(r'([a-z,])\s*\n\s*([a-z])', r'\1 \2', answer)
+        
+        return answer
+
     def add_documents(self, chunks: List[Dict[str, Any]]):
         if not chunks:
             logger.error("❌ No chunks provided!")
@@ -488,7 +521,7 @@ class OptimizedSemanticRAGPipeline:
             }
         )
 
-        # Enhanced semantic prompt template
+        # Enhanced semantic prompt template with better formatting
         prompt_template = PromptTemplate(
             input_variables=["context", "question"],
             template="""You are an expert insurance policy analyst with semantic understanding capabilities. Analyze the policy document context to provide accurate, detailed answers.
@@ -502,14 +535,22 @@ SEMANTIC ANALYSIS INSTRUCTIONS:
 - Carefully analyze the semantic meaning and relationships in the policy context
 - Extract specific facts: numbers, percentages, time periods, conditions, and requirements
 - Understand implicit connections between different policy sections
-- Quote exact policy language when providing specific details
+- Quote exact policy language when providing specific details, but format quotes naturally
 - Synthesize information from multiple context sections when relevant
 - Distinguish between explicit statements and reasonable inferences
 - If information is partial, provide what's available and note limitations
 - Be precise about conditions, exceptions, and qualifying circumstances
 
+FORMATTING GUIDELINES:
+- Write in clear, professional paragraphs without unnecessary line breaks
+- When quoting policy text, integrate quotes smoothly into sentences
+- Use bullet points or numbered lists only when listing multiple related items
+- Avoid excessive quotation marks around single words or short phrases
+- Write numbers and percentages directly (e.g., 30 days, 5%, Rs. 10,000) without quotes
+- Make the response flow naturally and be easy to read
+
 ANSWER FORMAT:
-Provide a comprehensive answer based on your semantic analysis of the policy document context.
+Provide a comprehensive, well-formatted answer based on your semantic analysis of the policy document context.
 
 ANSWER:"""
         )
@@ -533,10 +574,13 @@ ANSWER:"""
         try:
             # Retrieve with semantic understanding
             result = await asyncio.to_thread(self.qa_chain, {"query": question})
-            answer = result.get("result", "Failed to generate semantic answer.")
+            raw_answer = result.get("result", "Failed to generate semantic answer.")
             
-            logger.info(f"✅ Semantic answer generated: {len(answer)} characters")
-            return answer
+            # Clean up the response formatting
+            clean_answer = self.clean_response(raw_answer)
+            
+            logger.info(f"✅ Semantic answer generated: {len(clean_answer)} characters")
+            return clean_answer
 
         except Exception as e:
             logger.error(f"❌ Error during semantic QA: {e}")
