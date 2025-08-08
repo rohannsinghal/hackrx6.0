@@ -114,17 +114,27 @@ class RAGPipeline:
         self.groq_client = request.app.state.groq_client
         self.collection = self.chroma_client.get_or_create_collection(name=self.collection_name)
 
-    def add_documents(self, chunks: List[Dict]):
+    def add_documents(self, chunks: List[Any]):
         if not chunks:
             logger.warning("No chunks provided to add_documents.")
             return
         
         logger.info(f"Starting to add {len(chunks)} chunks...")
         
-        # Use instance variables to access models
-        contents = [c['content'] for c in chunks]
-        metadatas = [c['metadata'] for c in chunks]
-        ids = [c['chunk_id'] for c in chunks]
+        # Handle both DocumentChunk objects and dictionaries
+        contents = []
+        metadatas = []
+        ids = []
+        
+        for c in chunks:
+            if hasattr(c, 'content'):  # DocumentChunk object
+                contents.append(c.content)
+                metadatas.append(c.metadata)
+                ids.append(c.chunk_id)
+            else:  # Dictionary
+                contents.append(c['content'])
+                metadatas.append(c['metadata'])
+                ids.append(c['chunk_id'])
         
         self.collection.add(
             embeddings=self.embedding_model.encode(contents, show_progress_bar=True).tolist(),
@@ -205,9 +215,9 @@ async def run_submission(request: Request, submission_request: SubmissionRequest
                 with open(temp_file_path, "wb") as f:
                     f.write(response.content)
                 
-                # This call now correctly uses the parsing_service loaded in the app state
-                chunks = parsing_service.process_pdf_ultrafast(temp_file_path)
-                all_chunks.extend(chunks)
+                # Convert DocumentChunk objects to dictionaries for the RAG pipeline
+                chunk_dicts = [chunk.to_dict() for chunk in chunks]
+                all_chunks.extend(chunk_dicts)
                 os.remove(temp_file_path)
 
             except Exception as e:
