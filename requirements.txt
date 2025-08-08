@@ -15,10 +15,11 @@ mammoth==1.6.0
 beautifulsoup4==4.12.2
 
 # CORE: LangChain framework - THE GAME CHANGER!
-langchain==0.1.0             # Main LangChain framework
-langchain-community==0.0.10  # Community integrations
-langchain-core==0.1.10       # Core LangChain components
-langchain-experimental==0.0.45  # Experimental features
+# requirements.txt
+langchain==0.1.0
+langchain-community==0.0.10
+langchain-core==0.1.10
+langchain-experimental==0.0.49  # Updated from 0.0.45
 
 # Vector DB and Embeddings (LangChain compatible)
 chromadb==0.4.18
