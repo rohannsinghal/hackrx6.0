@@ -1,15 +1,44 @@
-fastapi
-uvicorn[standard]
-pydantic
-sentence-transformers
-chromadb
-groq
-langchain
-PyMuPDF # Corrected from 'fitz'
-pdfplumber
-mammoth # Corrected from 'mammoth-convert'
-beautifulsoup4
-httpx
-python-multipart
-python-dotenv
-psutil
+# Enhanced requirements.txt with LangChain and advanced ML libraries
+
+# Existing dependencies
+fastapi==0.104.1
+uvicorn==0.24.0
+pydantic==2.5.1
+httpx==0.25.2
+python-dotenv==1.0.0
+psutil==5.9.6
+
+# Document processing
+PyMuPDF==1.23.8
+pdfplumber==0.10.3
+mammoth==1.6.0
+beautifulsoup4==4.12.2
+
+# CORE: LangChain framework - THE GAME CHANGER!
+langchain==0.1.0             # Main LangChain framework
+langchain-community==0.0.10  # Community integrations
+langchain-core==0.1.10       # Core LangChain components
+langchain-experimental==0.0.45  # Experimental features
+
+# Vector DB and Embeddings (LangChain compatible)
+chromadb==0.4.18
+sentence-transformers==2.2.2
+huggingface-hub==0.19.4      # For HuggingFace embeddings in LangChain
+
+# LLM Integration
+groq==0.4.1
+
+# Enhanced semantic search and ML dependencies
+scikit-learn==1.3.2          # For TF-IDF vectorizer and cosine similarity
+numpy==1.24.3                # For numerical operations
+python-Levenshtein==0.23.0   # For string similarity calculations
+
+# LangChain text processing utilities
+tiktoken==0.5.2              # For token counting (OpenAI tokenizer)
+nltk==3.8.1                  # Natural Language Toolkit
+spacy==3.7.2                 # Advanced NLP processing
+
+# Additional utilities for enhanced functionality
+scipy==1.11.4                # For advanced similarity measures
+unstructured==0.11.8         # Alternative document processing
+python-magic==0.4.27         # File type detection
