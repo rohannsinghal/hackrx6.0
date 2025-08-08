@@ -695,20 +695,34 @@ async def startup_event():
         logger.error(f"💥 FATAL ERROR: {e}")
         raise e
 
-# --- API MODELS ---
+# --- API MODELS (FIXED FOR HACKATHON) ---
 
 class SubmissionRequest(BaseModel):
     documents: List[str]
     questions: List[str]
 
-class Answer(BaseModel):
-    question: str
-    answer: str
+    class Config:
+        schema_extra = {
+            "example": {
+                "documents": ["https://example.com/document1.pdf"],
+                "questions": ["What is the grace period?", "What are the exclusions?"]
+            }
+        }
 
 class SubmissionResponse(BaseModel):
-    answers: List[Answer]
+    answers: List[str]  # ✅ Fixed: Just strings, not objects
 
-# --- MAIN ENDPOINT WITH AUTHENTICATION ---
+    class Config:
+        schema_extra = {
+            "example": {
+                "answers": [
+                    "The grace period is 30 days for premium payment.",
+                    "The main exclusions include pre-existing diseases for 36 months."
+                ]
+            }
+        }
+
+# --- MAIN ENDPOINT WITH AUTHENTICATION (FIXED FORMAT) ---
 
 @app.post("/hackrx/run", response_model=SubmissionResponse, dependencies=[Depends(verify_bearer_token)])
 async def run_submission(request: Request, submission_request: SubmissionRequest = Body(...)):
@@ -752,9 +766,9 @@ async def run_submission(request: Request, submission_request: SubmissionRequest
 
         if not all_chunks:
             logger.error("❌ No chunks processed!")
+            # ✅ Fixed: Return just strings
             return SubmissionResponse(answers=[
-                Answer(question=q, answer="Document processing failed.")
-                for q in submission_request.questions
+                "Document processing failed." for _ in submission_request.questions
             ])
 
         # Add to semantic RAG pipeline
@@ -762,24 +776,24 @@ async def run_submission(request: Request, submission_request: SubmissionRequest
 
         # Answer questions with semantic understanding
         logger.info(f"❓ Answering questions with optimized semantics...")
-        answers = []
+        answers = []  # ✅ Fixed: Just collect string answers
         
         for question in submission_request.questions:
             try:
                 answer = await rag_pipeline.answer_question(question)
-                answers.append(Answer(question=question, answer=answer))
+                answers.append(answer)  # ✅ Fixed: Just append the string answer
             except Exception as e:
                 logger.error(f"❌ Question failed: {e}")
-                answers.append(Answer(question=question, answer="Failed to process question."))
+                answers.append("Failed to process question.")  # ✅ Fixed: Just string
         
         logger.info("🎉 All semantic questions processed!")
-        return SubmissionResponse(answers=answers)
+        return SubmissionResponse(answers=answers)  # ✅ Fixed: Just the string list
         
     except Exception as e:
         logger.error(f"💥 CRITICAL ERROR: {e}")
+        # ✅ Fixed: Return just strings
         return SubmissionResponse(answers=[
-            Answer(question=q, answer=f"System error: {str(e)}")
-            for q in submission_request.questions
+            f"System error: {str(e)}" for _ in submission_request.questions
         ])
 
 @app.get("/")
