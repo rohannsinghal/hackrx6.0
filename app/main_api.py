@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 # LangChain imports
-from langchain.embeddings import HuggingFaceEmbeddings
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
@@ -29,7 +29,7 @@ from langchain.schema.document import Document as LangChainDocument
 import groq
 
 # Document processing and environment
-from parser import FastDocumentParserService  # Fixed import
+from .parser import FastDocumentParserService  # Fixed import
 import httpx
 from dotenv import load_dotenv
 
