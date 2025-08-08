@@ -11,7 +11,7 @@ import asyncio
 from collections import defaultdict
 
 # FastAPI and core dependencies
-from fastapi import FastAPI, Body, HTTPException, Request
+from fastapi import FastAPI, Body, HTTPException, Request, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -40,13 +40,35 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Optimized Semantic RAG", version="2.1.0")
 
+# Updated CORS middleware for hackathon
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
     allow_credentials=True, 
-    allow_methods=["*"], 
-    allow_headers=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["*", "Authorization", "Content-Type"],
 )
+
+# --- AUTHENTICATION MIDDLEWARE ---
+
+async def verify_bearer_token(authorization: str = Header(None)):
+    """Verify Bearer token authentication as required by hackathon"""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header required")
+    
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization format. Use 'Bearer <token>'")
+    
+    token = authorization.replace("Bearer ", "")
+    
+    # Basic token validation
+    if len(token) < 10:
+        raise HTTPException(status_code=401, detail="Invalid token format")
+    
+    # For hackathon, we accept any properly formatted Bearer token
+    # In production, you would validate against a specific token or database
+    logger.info(f"✅ Authentication successful with token: {token[:10]}...")
+    return token
 
 # --- OPTIMIZED SEMANTIC DOCUMENT PARSER ---
 
@@ -686,9 +708,9 @@ class Answer(BaseModel):
 class SubmissionResponse(BaseModel):
     answers: List[Answer]
 
-# --- MAIN ENDPOINT ---
+# --- MAIN ENDPOINT WITH AUTHENTICATION ---
 
-@app.post("/hackrx/run", response_model=SubmissionResponse)
+@app.post("/hackrx/run", response_model=SubmissionResponse, dependencies=[Depends(verify_bearer_token)])
 async def run_submission(request: Request, submission_request: SubmissionRequest = Body(...)):
     try:
         logger.info(f"🎯 Processing {len(submission_request.documents)} documents, {len(submission_request.questions)} questions")
