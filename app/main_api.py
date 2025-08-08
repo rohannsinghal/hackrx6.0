@@ -1,6 +1,5 @@
-# --- STANDALONE main_api.py with embedded parser ---
+# --- OPTIMIZED SEMANTIC RAG SYSTEM ---
 
-import psutil
 import os
 import json
 import uuid
@@ -10,15 +9,13 @@ from typing import List, Dict, Any, Optional
 import logging
 import asyncio
 from collections import defaultdict
-from pathlib import Path
-import gc
 
 # FastAPI and core dependencies
 from fastapi import FastAPI, Body, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-# LangChain imports (using updated non-deprecated imports)
+# LangChain imports
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain.chains import RetrievalQA
@@ -30,27 +27,19 @@ from langchain.schema.document import Document as LangChainDocument
 # Document processing imports
 import fitz  # PyMuPDF
 import pdfplumber
-import mammoth
-import email
-import email.policy
-from bs4 import BeautifulSoup
 
 # LLM Integration
 import groq
-
-# Other dependencies
 import httpx
 from dotenv import load_dotenv
-import numpy as np
 
 # Setup
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Semantic RAG System", version="2.0.0")
+app = FastAPI(title="Optimized Semantic RAG", version="2.1.0")
 
-# CORS Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -59,10 +48,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- EMBEDDED DOCUMENT PARSER ---
+# --- OPTIMIZED SEMANTIC DOCUMENT PARSER ---
 
 class DocumentChunk:
-    """Simple data class for document chunks"""
     def __init__(self, content: str, metadata: Dict[str, Any], chunk_id: str):
         self.content = content
         self.metadata = metadata
@@ -75,41 +63,35 @@ class DocumentChunk:
             "chunk_id": self.chunk_id
         }
 
-class SemanticDocumentParser:
-    """Advanced semantic document parsing with intelligent chunking"""
+class OptimizedSemanticParser:
     def __init__(self):
-        self.chunk_size = 1200  # Optimized for semantic coherence
-        self.chunk_overlap = 200  # Increased overlap for better context preservation
-        self.max_chunks = 300   # Increased for better coverage
-        self.table_row_limit = 25
-        logger.info("SemanticDocumentParser initialized")
+        # Optimized parameters - balanced between quality and performance
+        self.chunk_size = 1200
+        self.chunk_overlap = 180
+        self.max_chunks = 200  # Sweet spot for memory vs coverage
+        self.max_pages = 20    # Reduced from 30
+        logger.info("OptimizedSemanticParser initialized")
 
     def semantic_text_split(self, text: str, source: str) -> List[str]:
-        """Advanced semantic text splitting using multiple strategies"""
+        """Optimized semantic text splitting - keeps intelligence while being efficient"""
         if not text or len(text) < 100:
             return [text] if text else []
         
-        if len(text) <= self.chunk_size:
-            return [text]
-        
         chunks = []
         
-        # Strategy 1: Split by semantic sections
-        section_patterns = [
+        # Semantic boundary patterns (optimized list)
+        semantic_patterns = [
             r'\n\s*(?:\d+\.)+\s*[A-Z][^.\n]*[.:]',  # Numbered sections
             r'\n\s*[A-Z][A-Z\s]{8,}[:\n]',  # ALL CAPS HEADINGS
-            r'\n\s*(?:SECTION|PART|CHAPTER)\s+\w+',  # Section markers
-            r'\n\s*(?:EXCLUSIONS?|INCLUSIONS?|BENEFITS?|COVERAGE|DEFINITIONS?)',  # Key sections
-            r'\n\s*(?:WAITING\s+PERIOD|GRACE\s+PERIOD)',  # Important terms
-            r'\n\s*(?:CLAIMS?|PREMIUM|DEDUCTIBLE)',  # Key insurance terms
+            r'\n\s*(?:EXCLUSIONS?|BENEFITS?|COVERAGE|DEFINITIONS?)',  # Key sections
+            r'\n\s*(?:WAITING\s+PERIOD|GRACE\s+PERIOD|CLAIMS?)',  # Important terms
         ]
         
-        # Find all section boundaries
+        # Find semantic boundaries efficiently
         boundaries = [0]
-        for pattern in section_patterns:
+        for pattern in semantic_patterns:
             matches = re.finditer(pattern, text, re.IGNORECASE)
-            for match in matches:
-                boundaries.append(match.start())
+            boundaries.extend(match.start() for match in matches)
         
         boundaries.append(len(text))
         boundaries = sorted(set(boundaries))
@@ -121,59 +103,43 @@ class SemanticDocumentParser:
             section_text = text[section_start:section_end].strip()
             
             if len(section_text) <= self.chunk_size:
-                if section_text and len(section_text) > 50:
+                if section_text and len(section_text) > 80:
                     chunks.append(section_text)
             else:
-                # Split large sections using sliding window with semantic boundaries
-                sub_chunks = self._split_large_section(section_text)
+                # Split large sections intelligently
+                sub_chunks = self._split_section_smartly(section_text)
                 chunks.extend(sub_chunks)
         
-        # If no semantic boundaries found, use intelligent sliding window
+        # Fallback to sentence-based splitting if no boundaries found
         if len(chunks) == 0:
-            chunks = self._intelligent_sliding_window(text)
+            chunks = self._fallback_sentence_split(text)
         
+        # Limit total chunks for memory management
+        chunks = chunks[:self.max_chunks]
         logger.info(f"Split {source} into {len(chunks)} semantic chunks")
-        return chunks[:self.max_chunks]  # Limit total chunks
+        return chunks
 
-    def _split_large_section(self, text: str) -> List[str]:
-        """Split large sections using semantic boundaries"""
+    def _split_section_smartly(self, text: str) -> List[str]:
+        """Smart splitting for large sections"""
         chunks = []
-        start = 0
+        sentences = re.split(r'(?<=[.!?])\s+', text)
         
-        while start < len(text):
-            end = min(start + self.chunk_size, len(text))
-            
-            if end < len(text):
-                # Find best break point using multiple criteria
-                search_start = max(start + self.chunk_size // 2, end - 400)
-                
-                # Look for sentence endings first
-                sentence_ends = [m.end() for m in re.finditer(r'[.!?]\s+', text[search_start:end])]
-                if sentence_ends:
-                    end = search_start + sentence_ends[-1]
-                else:
-                    # Look for paragraph breaks
-                    para_breaks = [m.start() for m in re.finditer(r'\n\s*\n', text[search_start:end])]
-                    if para_breaks:
-                        end = search_start + para_breaks[-1]
-                    else:
-                        # Look for any line break
-                        line_breaks = [m.start() for m in re.finditer(r'\n', text[search_start:end])]
-                        if line_breaks:
-                            end = search_start + line_breaks[-1]
-            
-            chunk = text[start:end].strip()
-            if chunk and len(chunk) > 50:
-                chunks.append(chunk)
-            
-            start = end - self.chunk_overlap
-            if start <= 0:
-                start = end
+        current_chunk = ""
+        for sentence in sentences:
+            if len(current_chunk) + len(sentence) <= self.chunk_size:
+                current_chunk += sentence + " "
+            else:
+                if current_chunk.strip():
+                    chunks.append(current_chunk.strip())
+                current_chunk = sentence + " "
+        
+        if current_chunk.strip():
+            chunks.append(current_chunk.strip())
         
         return chunks
 
-    def _intelligent_sliding_window(self, text: str) -> List[str]:
-        """Fallback intelligent sliding window approach"""
+    def _fallback_sentence_split(self, text: str) -> List[str]:
+        """Fallback intelligent sentence-based splitting"""
         chunks = []
         sentences = re.split(r'(?<=[.!?])\s+', text)
         
@@ -192,26 +158,24 @@ class SemanticDocumentParser:
         return chunks
 
     def extract_semantic_tables(self, file_path: str) -> str:
-        """Extract tables with semantic understanding"""
+        """Optimized semantic table extraction"""
         table_text = ""
         table_count = 0
-        max_tables = 20
+        max_tables = 12  # Balanced number
 
         try:
             with pdfplumber.open(file_path) as pdf:
-                total_pages = len(pdf.pages)
-                pages_to_process = list(range(min(total_pages, 25)))  # Process more pages
-
-                logger.info(f"📊 Processing {len(pages_to_process)} pages for semantic table extraction")
-
+                # Process key pages only
+                pages_to_process = list(range(min(len(pdf.pages), 18)))
+                
                 for page_num in pages_to_process:
                     if table_count >= max_tables:
                         break
-
+                        
                     page = pdf.pages[page_num]
                     tables = page.find_tables()
 
-                    for table in tables:
+                    for table in tables[:2]:  # Max 2 tables per page for efficiency
                         if table_count >= max_tables:
                             break
 
@@ -219,241 +183,196 @@ class SemanticDocumentParser:
                             table_data = table.extract()
                             if table_data and len(table_data) >= 2:
                                 
-                                # Semantic filtering - look for insurance-related content
-                                table_text_content = str(table_data).lower()
-                                insurance_terms = [
-                                    'premium', 'coverage', 'benefit', 'waiting', 'exclusion',
-                                    'claim', 'deductible', 'policy', 'insured', 'sum', 'limit',
-                                    'medical', 'hospital', 'treatment', 'age', 'amount'
-                                ]
+                                # Semantic relevance check (optimized)
+                                table_str = str(table_data).lower()
+                                insurance_keywords = ['premium', 'coverage', 'benefit', 'waiting', 'exclusion', 
+                                                    'claim', 'limit', 'sum', 'medical', 'hospital']
                                 
-                                # Skip if doesn't contain insurance terms
-                                if not any(term in table_text_content for term in insurance_terms):
-                                    continue
-                                
-                                # Skip repetitive administrative content
-                                if any(admin_term in table_text_content for admin_term in 
-                                      ['ombudsman', 'lalit bhawan', 'office address']):
-                                    continue
-                                
-                                # Process meaningful table
-                                limited_data = table_data[:min(30, len(table_data))]
-                                
-                                # Create semantic table representation
-                                table_md = f"\n**POLICY TABLE {table_count + 1} (Page {page_num + 1})**\n"
-                                
-                                # Add table with proper formatting
-                                if len(limited_data) > 0 and limited_data[0]:
-                                    header = " | ".join(str(cell or "").strip()[:50] for cell in limited_data[0])
-                                    table_md += f"| {header} |\n"
-                                    table_md += f"| {' | '.join(['---'] * len(limited_data[0]))} |\n"
-                                    
-                                    for row in limited_data[1:]:
-                                        if row:
-                                            padded_row = list(row) + [None] * (len(limited_data[0]) - len(row))
-                                            row_str = " | ".join(str(cell or "").strip()[:50] for cell in padded_row)
-                                            table_md += f"| {row_str} |\n"
-                                
-                                table_md += "\n"
-                                table_text += table_md
-                                table_count += 1
+                                if any(keyword in table_str for keyword in insurance_keywords):
+                                    # Skip administrative tables
+                                    if not any(admin in table_str for admin in ['ombudsman', 'lalit bhawan']):
+                                        
+                                        # Format table efficiently
+                                        table_md = f"\n**POLICY TABLE {table_count + 1} (Page {page_num + 1})**\n"
+                                        
+                                        # Limit rows for memory efficiency
+                                        limited_data = table_data[:min(15, len(table_data))]
+                                        
+                                        for row in limited_data:
+                                            if row:
+                                                row_str = " | ".join(str(cell or "")[:40] for cell in row)
+                                                table_md += f"| {row_str} |\n"
+                                        
+                                        table_text += table_md + "\n"
+                                        table_count += 1
 
-                        except Exception as e:
-                            logger.warning(f"Skip table on page {page_num + 1}: {e}")
+                        except Exception:
+                            continue
 
-                logger.info(f"🎯 Extracted {table_count} semantic tables")
+                logger.info(f"Extracted {table_count} semantic tables")
 
         except Exception as e:
-            logger.error(f"❌ Semantic table extraction failed: {e}")
+            logger.warning(f"Semantic table extraction failed: {e}")
 
         return table_text
 
-    def process_pdf_semantically(self, file_path: str) -> List[DocumentChunk]:
-        """Semantic PDF processing for any insurance document"""
-        logger.info(f"🚀 Processing PDF semantically: {os.path.basename(file_path)}")
+    def process_pdf_optimized_semantic(self, file_path: str) -> List[DocumentChunk]:
+        """Optimized semantic PDF processing - keeps intelligence while being memory efficient"""
+        logger.info(f"🚀 Processing PDF with optimized semantics: {os.path.basename(file_path)}")
         start_time = time.time()
         chunks = []
 
         try:
-            # Extract text with better preservation
+            # Efficient text extraction
             doc = fitz.open(file_path)
             full_text = ""
             total_pages = len(doc)
             
-            logger.info("📄 Extracting content with semantic awareness...")
-            pages_to_process = list(range(min(total_pages, 30)))  # Process more pages
+            # Process optimized number of pages
+            pages_to_process = list(range(min(total_pages, self.max_pages)))
             
             for page_num in pages_to_process:
                 try:
                     page = doc[page_num]
+                    page_text = page.get_text()
                     
-                    # Get text blocks in reading order
-                    blocks = page.get_text("dict")["blocks"]
-                    page_text = ""
-                    
-                    for block in blocks:
-                        if "lines" in block:
-                            block_text = ""
-                            for line in block["lines"]:
-                                line_text = ""
-                                for span in line["spans"]:
-                                    text = span["text"].strip()
-                                    if text:
-                                        line_text += text + " "
-                                if line_text.strip():
-                                    block_text += line_text.strip() + "\n"
-                            
-                            # Keep blocks that contain meaningful content
-                            if len(block_text.strip()) > 20:
-                                page_text += block_text + "\n"
-                    
-                    # Semantic filtering - remove noise while preserving content
+                    # Intelligent content filtering
                     lines = page_text.split('\n')
                     filtered_lines = []
                     
                     for line in lines:
                         line = line.strip()
-                        if not line:
-                            continue
-                        
-                        # Skip obvious noise but keep everything else
-                        skip_patterns = [
-                            r'^office of the insurance ombudsman',
-                            r'^lalit bhawan',
-                            r'^\d+\s*$',  # Page numbers only
-                            r'^page \d+ of \d+$',
-                        ]
-                        
-                        should_skip = any(re.match(pattern, line.lower()) for pattern in skip_patterns)
-                        if not should_skip:
+                        if (line and len(line) > 15 and 
+                            not any(noise in line.lower() for noise in 
+                                  ['ombudsman', 'lalit bhawan', 'page ']) and
+                            not re.match(r'^\d+\s*$', line)):  # Skip page numbers
                             filtered_lines.append(line)
                     
-                    clean_page_text = '\n'.join(filtered_lines)
-                    
-                    if clean_page_text.strip() and len(clean_page_text) > 50:
-                        full_text += f"\n\n=== Page {page_num + 1} ===\n{clean_page_text}"
+                    clean_text = '\n'.join(filtered_lines)
+                    if clean_text and len(clean_text) > 100:
+                        full_text += f"\n\nPage {page_num + 1}:\n{clean_text}"
                         
-                except Exception as e:
-                    logger.warning(f"Error processing page {page_num + 1}: {e}")
+                except Exception:
+                    continue
 
             doc.close()
 
-            # Extract semantic tables
-            logger.info("📊 Extracting semantic tables...")
+            # Add semantic tables
             table_content = self.extract_semantic_tables(file_path)
-
-            # Combine content strategically
             if table_content:
-                full_text += f"\n\n{'='*50}\nIMPORTANT POLICY DATA\n{'='*50}\n{table_content}"
+                full_text += f"\n\n{'='*40}\nKEY POLICY TABLES\n{'='*40}\n{table_content}"
 
             # Create semantic chunks
-            logger.info("📦 Creating semantic chunks...")
             text_chunks = self.semantic_text_split(full_text, os.path.basename(file_path))
 
-            # Create chunks with rich metadata for semantic search
+            # Create chunks with optimized semantic metadata
             for idx, chunk_text in enumerate(text_chunks):
-                # Analyze chunk content semantically
+                # Lightweight semantic analysis
                 chunk_lower = chunk_text.lower()
                 
-                # Detect content type
-                content_indicators = {
-                    'definitions': ['means', 'definition', 'shall mean', 'refers to'],
-                    'coverage': ['coverage', 'covered', 'benefit', 'sum insured'],
-                    'exclusions': ['exclusion', 'excluded', 'not covered', 'shall not'],
-                    'waiting_periods': ['waiting period', 'wait', 'months', 'years'],
-                    'claims': ['claim', 'settlement', 'reimbursement', 'cashless'],
-                    'premium': ['premium', 'payment', 'due', 'grace period'],
-                    'medical': ['hospital', 'medical', 'treatment', 'doctor', 'physician'],
-                    'tables': ['**table', 'policy table', '|']
+                # Detect content types efficiently
+                content_types = []
+                type_indicators = {
+                    'definitions': ['means', 'definition', 'shall mean'],
+                    'coverage': ['coverage', 'covered', 'benefit'],
+                    'exclusions': ['exclusion', 'excluded', 'not covered'],
+                    'waiting_periods': ['waiting period', 'wait'],
+                    'claims': ['claim', 'settlement'],
+                    'premium': ['premium', 'payment', 'grace period'],
+                    'medical': ['hospital', 'medical', 'treatment']
                 }
                 
-                detected_types = []
-                for content_type, indicators in content_indicators.items():
+                for content_type, indicators in type_indicators.items():
                     if any(indicator in chunk_lower for indicator in indicators):
-                        detected_types.append(content_type)
+                        content_types.append(content_type)
                 
-                # Calculate content richness
-                sentences = re.split(r'[.!?]+', chunk_text)
-                avg_sentence_length = sum(len(s.split()) for s in sentences) / max(len(sentences), 1)
-                
+                # Calculate simple relevance score
+                insurance_terms = ['policy', 'coverage', 'benefit', 'exclusion', 'claim', 'premium']
+                relevance_score = sum(1 for term in insurance_terms if term in chunk_lower)
+
                 chunks.append(DocumentChunk(
                     content=chunk_text,
                     metadata={
                         "source": os.path.basename(file_path),
                         "chunk_index": idx,
-                        "document_type": "semantic_pdf",
-                        "content_types": ", ".join(detected_types),
+                        "document_type": "optimized_semantic",
+                        "content_types": ", ".join(content_types) if content_types else "general",
                         "total_pages": total_pages,
                         "chunk_length": len(chunk_text),
-                        "sentence_count": len([s for s in sentences if s.strip()]),
-                        "avg_sentence_length": round(avg_sentence_length, 1),
-                        "has_tables": "tables" in detected_types,
-                        "semantic_score": len(detected_types) * avg_sentence_length
+                        "relevance_score": relevance_score,
+                        "has_tables": "table" in chunk_text.lower()
                     },
                     chunk_id=str(uuid.uuid4())
                 ))
 
             elapsed = time.time() - start_time
-            logger.info(f"✅ Semantic processing complete in {elapsed:.2f}s: {len(chunks)} chunks")
+            logger.info(f"✅ Optimized semantic processing complete in {elapsed:.2f}s: {len(chunks)} chunks")
             return chunks
 
         except Exception as e:
-            logger.error(f"❌ Semantic processing failed: {e}")
-            return self._emergency_semantic_fallback(file_path)
+            logger.error(f"❌ Optimized semantic processing failed: {e}")
+            return self._emergency_fallback(file_path)
 
-    def _emergency_semantic_fallback(self, file_path: str) -> List[DocumentChunk]:
-        """Emergency semantic fallback"""
-        logger.info("🆘 Emergency semantic fallback")
+    def _emergency_fallback(self, file_path: str) -> List[DocumentChunk]:
+        """Emergency fallback that still maintains some intelligence"""
+        logger.info("🆘 Emergency fallback with basic semantics")
         try:
             doc = fitz.open(file_path)
             text_parts = []
             
-            for page_num in range(min(20, len(doc))):
+            for page_num in range(min(15, len(doc))):
                 page = doc[page_num]
                 page_text = page.get_text()
                 
                 # Basic semantic filtering
-                if len(page_text.strip()) > 100:
-                    # Remove obvious administrative noise
-                    lines = [line for line in page_text.split('\n') 
-                           if not any(noise in line.lower() for noise in 
-                                    ['office of the insurance ombudsman', 'lalit bhawan'])]
-                    clean_text = '\n'.join(lines)
-                    
-                    if len(clean_text.strip()) > 100:
-                        text_parts.append(clean_text)
+                if (len(page_text.strip()) > 100 and
+                    'ombudsman' not in page_text.lower()):
+                    text_parts.append(page_text)
 
             doc.close()
             full_text = "\n\n".join(text_parts)
 
-            # Create semantic chunks
-            chunk_size = max(800, len(full_text) // 20)
+            # Simple but effective chunking
             chunks = []
+            sentences = re.split(r'(?<=[.!?])\s+', full_text)
+            current_chunk = ""
             
-            for i in range(0, len(full_text), chunk_size):
-                chunk_text = full_text[i:i + chunk_size]
-                if len(chunk_text.strip()) > 100:
-                    chunks.append(DocumentChunk(
-                        content=chunk_text,
-                        metadata={
-                            "source": os.path.basename(file_path),
-                            "chunk_index": len(chunks),
-                            "document_type": "emergency_semantic",
-                            "chunk_length": len(chunk_text)
-                        },
-                        chunk_id=str(uuid.uuid4())
-                    ))
+            for sentence in sentences:
+                if len(current_chunk) + len(sentence) <= 1000:
+                    current_chunk += sentence + " "
+                else:
+                    if current_chunk.strip():
+                        chunks.append(DocumentChunk(
+                            content=current_chunk.strip(),
+                            metadata={
+                                "source": os.path.basename(file_path),
+                                "chunk_index": len(chunks),
+                                "document_type": "emergency_fallback"
+                            },
+                            chunk_id=str(uuid.uuid4())
+                        ))
+                    current_chunk = sentence + " "
+            
+            if current_chunk.strip():
+                chunks.append(DocumentChunk(
+                    content=current_chunk.strip(),
+                    metadata={
+                        "source": os.path.basename(file_path),
+                        "chunk_index": len(chunks),
+                        "document_type": "emergency_fallback"
+                    },
+                    chunk_id=str(uuid.uuid4())
+                ))
 
-            return chunks
+            return chunks[:100]  # Limit for safety
 
         except Exception as e:
-            logger.error(f"Emergency semantic fallback failed: {e}")
-            raise Exception("All semantic processing methods failed")
+            logger.error(f"Emergency fallback failed: {e}")
+            raise Exception("All processing methods failed")
 
 # --- GROQ LLM WRAPPER ---
 
 class GroqLLM(LLM):
-    """Custom Groq LLM wrapper for LangChain"""
     groq_client: Any
     api_key_manager: Any
 
@@ -473,7 +392,7 @@ class GroqLLM(LLM):
                 model="llama-3.3-70b-versatile",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
-                max_tokens=1000,  # Increased for more detailed answers
+                max_tokens=900,
                 top_p=0.9,
                 stop=stop
             )
@@ -484,10 +403,9 @@ class GroqLLM(LLM):
             logger.error(f"Groq LLM call failed: {e}")
             return "Error generating response"
 
-# --- ADVANCED SEMANTIC RAG PIPELINE ---
+# --- OPTIMIZED SEMANTIC RAG PIPELINE ---
 
-class AdvancedSemanticRAGPipeline:
-    """Advanced semantic RAG pipeline with intelligent retrieval"""
+class OptimizedSemanticRAGPipeline:
     def __init__(self, collection_name: str, request: Request):
         self.collection_name = collection_name
         self.embedding_model = request.app.state.embedding_model
@@ -499,39 +417,58 @@ class AdvancedSemanticRAGPipeline:
             persist_directory=CHROMA_PERSIST_DIR
         )
         self.qa_chain = None
-        logger.info(f"✅ Advanced semantic RAG pipeline initialized: {collection_name}")
+        logger.info(f"✅ Optimized semantic RAG pipeline initialized: {collection_name}")
 
     def add_documents(self, chunks: List[Dict[str, Any]]):
-        """Add documents with advanced semantic filtering"""
         if not chunks:
             logger.error("❌ No chunks provided!")
             return
 
-        logger.info(f"📚 Adding {len(chunks)} chunks with semantic processing...")
+        logger.info(f"📚 Adding {len(chunks)} chunks with optimized semantic processing...")
         
-        # Advanced semantic filtering
+        # Optimized semantic filtering
         quality_chunks = []
         for chunk in chunks:
             content = chunk['content']
+            metadata = chunk.get('metadata', {})
             
-            # Semantic quality assessment
-            quality_score = self._assess_chunk_quality(content)
+            # Multi-factor quality assessment
+            quality_factors = []
             
-            if quality_score > 0.3:  # Threshold for semantic quality
+            # Length factor
+            if len(content) > 120:
+                quality_factors.append(1)
+            
+            # Insurance relevance factor
+            insurance_terms = ['policy', 'coverage', 'benefit', 'exclusion', 'claim', 'premium', 
+                             'hospital', 'medical', 'treatment', 'waiting', 'insured']
+            term_count = sum(1 for term in insurance_terms if term in content.lower())
+            if term_count >= 2:
+                quality_factors.append(2)
+            
+            # Content type factor
+            content_types = metadata.get('content_types', '')
+            if content_types and content_types != 'general':
+                quality_factors.append(1)
+            
+            # Noise penalty
+            if any(noise in content.lower() for noise in ['ombudsman', 'lalit bhawan']):
+                quality_factors.append(-2)
+            
+            # Calculate final quality score
+            quality_score = sum(quality_factors)
+            
+            if quality_score > 0:
                 quality_chunks.append(chunk)
 
-        # Sort by semantic relevance score if available
-        quality_chunks.sort(key=lambda x: x['metadata'].get('semantic_score', 0), reverse=True)
+        # Sort by relevance score if available
+        quality_chunks.sort(key=lambda x: x['metadata'].get('relevance_score', 0), reverse=True)
         
-        # Take top chunks if too many
-        if len(quality_chunks) > 150:
-            quality_chunks = quality_chunks[:150]
+        # Limit for memory efficiency while keeping quality
+        if len(quality_chunks) > 120:
+            quality_chunks = quality_chunks[:120]
 
         logger.info(f"📚 Filtered to {len(quality_chunks)} high-quality semantic chunks")
-        
-        # Debug semantic chunks
-        for i, chunk in enumerate(quality_chunks[:3]):
-            logger.info(f"Semantic chunk {i}: {chunk['content'][:200]}...")
 
         langchain_docs = [
             LangChainDocument(page_content=chunk['content'], metadata=chunk['metadata'])
@@ -541,44 +478,38 @@ class AdvancedSemanticRAGPipeline:
         self.vectorstore.add_documents(langchain_docs)
         logger.info(f"✅ Added {len(langchain_docs)} semantic documents to vectorstore")
 
-        # Create advanced retriever with hybrid search
+        # Optimized retriever with semantic search
         retriever = self.vectorstore.as_retriever(
-            search_type="mmr",  # Maximum Marginal Relevance for diversity
+            search_type="mmr",  # Keep MMR for diversity
             search_kwargs={
-                "k": 15,  # Increased for better coverage
-                "fetch_k": 30,  # Increased search space
-                "lambda_mult": 0.4  # Balance between relevance and diversity
+                "k": 10,  # Balanced retrieval
+                "fetch_k": 20,  # Reasonable search space
+                "lambda_mult": 0.6  # Balance relevance vs diversity
             }
         )
 
-        # Advanced prompt template for semantic understanding
+        # Enhanced semantic prompt template
         prompt_template = PromptTemplate(
             input_variables=["context", "question"],
-            template="""You are an expert insurance policy analyst with deep semantic understanding. Analyze the following policy document context to answer the question with precision and accuracy.
+            template="""You are an expert insurance policy analyst with semantic understanding capabilities. Analyze the policy document context to provide accurate, detailed answers.
 
 POLICY DOCUMENT CONTEXT:
 {context}
 
 QUESTION: {question}
 
-ANALYSIS INSTRUCTIONS:
-- Carefully read and understand the semantic meaning of the policy context above
-- Extract specific facts, numbers, percentages, time periods, conditions, and requirements
-- Look for explicit policy clauses, definitions, and procedural information
-- If multiple pieces of information relate to the question, synthesize them comprehensively
+SEMANTIC ANALYSIS INSTRUCTIONS:
+- Carefully analyze the semantic meaning and relationships in the policy context
+- Extract specific facts: numbers, percentages, time periods, conditions, and requirements
+- Understand implicit connections between different policy sections
 - Quote exact policy language when providing specific details
-- Distinguish between what is explicitly stated vs. what can be reasonably inferred
-- If information is partial or unclear, state what is available and note limitations
+- Synthesize information from multiple context sections when relevant
+- Distinguish between explicit statements and reasonable inferences
+- If information is partial, provide what's available and note limitations
 - Be precise about conditions, exceptions, and qualifying circumstances
-- Only state "Information not available" if absolutely no relevant information exists
-
-SEMANTIC ANALYSIS:
-- Consider the broader context and meaning beyond just keyword matching
-- Understand the logical relationships between different policy provisions
-- Recognize implicit connections between related policy sections
 
 ANSWER FORMAT:
-Provide a clear, specific, and complete answer based on your semantic analysis of the policy document.
+Provide a comprehensive answer based on your semantic analysis of the policy document context.
 
 ANSWER:"""
         )
@@ -591,70 +522,20 @@ ANSWER:"""
             return_source_documents=True
         )
 
-        logger.info("✅ Advanced semantic QA Chain ready")
-
-    def _assess_chunk_quality(self, content: str) -> float:
-        """Assess semantic quality of a chunk"""
-        content_lower = content.lower()
-        
-        # Base quality factors
-        length_score = min(len(content) / 1000, 1.0)  # Normalize to 1000 chars
-        
-        # Insurance domain relevance
-        insurance_terms = [
-            'policy', 'coverage', 'premium', 'benefit', 'claim', 'insured',
-            'exclusion', 'waiting period', 'deductible', 'hospital', 'medical',
-            'treatment', 'sum insured', 'reimbursement', 'cashless'
-        ]
-        term_score = sum(1 for term in insurance_terms if term in content_lower) / len(insurance_terms)
-        
-        # Structural quality
-        sentences = re.split(r'[.!?]+', content)
-        sentence_score = min(len([s for s in sentences if len(s.strip()) > 10]) / 5, 1.0)
-        
-        # Information density
-        number_score = min(len(re.findall(r'\d+', content)) / 10, 1.0)
-        
-        # Administrative noise penalty
-        noise_penalty = 0
-        noise_terms = ['ombudsman', 'lalit bhawan', 'office address']
-        if any(term in content_lower for term in noise_terms):
-            noise_penalty = 0.5
-        
-        quality_score = (length_score * 0.2 + term_score * 0.4 + 
-                        sentence_score * 0.2 + number_score * 0.2) - noise_penalty
-        
-        return max(0, quality_score)
+        logger.info("✅ Optimized semantic QA Chain ready")
 
     async def answer_question(self, question: str) -> str:
         if not self.qa_chain:
-            return "Error: Semantic QA chain not initialized. Please add documents first."
+            return "Error: Semantic QA chain not initialized."
 
         logger.info(f"🤔 Semantic analysis for: {question}")
 
         try:
-            # Enhanced semantic retrieval
-            retriever = self.vectorstore.as_retriever(
-                search_type="mmr",
-                search_kwargs={
-                    "k": 15,
-                    "fetch_k": 30,
-                    "lambda_mult": 0.4
-                }
-            )
-            
-            # Get semantically relevant documents
-            retrieved_docs = retriever.get_relevant_documents(question)
-            
-            logger.info(f"🔍 Retrieved {len(retrieved_docs)} semantic documents")
-            for i, doc in enumerate(retrieved_docs[:3]):
-                logger.info(f"Semantic doc {i}: {doc.page_content[:150]}...")
-
-            # Run advanced semantic QA
+            # Retrieve with semantic understanding
             result = await asyncio.to_thread(self.qa_chain, {"query": question})
             answer = result.get("result", "Failed to generate semantic answer.")
             
-            logger.info(f"✅ Semantic answer: {answer[:200]}...")
+            logger.info(f"✅ Semantic answer generated: {len(answer)} characters")
             return answer
 
         except Exception as e:
@@ -667,27 +548,16 @@ class GroqAPIKeyManager:
     def __init__(self, api_keys: List[str]):
         self.api_keys = [key.strip() for key in api_keys if key.strip()]
         self.key_usage_count = defaultdict(int)
-        self.key_last_used = defaultdict(float)
         self.current_key_index = 0
-        self.max_requests_per_key = 45
         logger.info(f"🔑 API Key Manager: {len(self.api_keys)} keys")
 
     def get_next_api_key(self):
-        current_time = time.time()
+        if not self.api_keys:
+            raise ValueError("No API keys available")
         
-        for key in self.api_keys:
-            if current_time - self.key_last_used[key] > 3600:
-                self.key_usage_count[key] = 0
-        
-        best_key = min(self.api_keys, key=lambda k: self.key_usage_count[k])
-        
-        if self.key_usage_count[best_key] >= self.max_requests_per_key:
-            best_key = self.api_keys[self.current_key_index % len(self.api_keys)]
-            self.current_key_index += 1
-        
-        self.key_usage_count[best_key] += 1
-        self.key_last_used[best_key] = current_time
-        return best_key
+        key = self.api_keys[self.current_key_index % len(self.api_keys)]
+        self.current_key_index += 1
+        return key
 
 # --- CONFIGURATION ---
 
@@ -699,7 +569,7 @@ UPLOAD_DIR = "/tmp/docs"
 @app.on_event("startup")
 async def startup_event():
     try:
-        logger.info("🚀 Initializing semantic services...")
+        logger.info("🚀 Initializing optimized semantic services...")
         
         app.state.embedding_model = HuggingFaceEmbeddings(
             model_name=EMBEDDING_MODEL,
@@ -712,11 +582,12 @@ async def startup_event():
         app.state.groq_client = groq.Groq(api_key=first_key)
         app.state.groq_llm = GroqLLM(groq_client=app.state.groq_client, api_key_manager=app.state.api_key_manager)
         
-        app.state.parsing_service = SemanticDocumentParser()
+        app.state.parsing_service = OptimizedSemanticParser()
         
-        logger.info("✅ All semantic services initialized!")
+        logger.info("✅ All optimized semantic services initialized!")
+        
     except Exception as e:
-        logger.error(f"💥 FATAL: {e}")
+        logger.error(f"💥 FATAL ERROR: {e}")
         raise e
 
 # --- API MODELS ---
@@ -736,108 +607,80 @@ class SubmissionResponse(BaseModel):
 
 @app.post("/hackrx/run", response_model=SubmissionResponse)
 async def run_submission(request: Request, submission_request: SubmissionRequest = Body(...)):
-    logger.info(f"🎯 Processing {len(submission_request.documents)} documents, {len(submission_request.questions)} questions")
-    
-    parsing_service = request.app.state.parsing_service
-    session_collection_name = f"semantic_session_{uuid.uuid4().hex}"
-    rag_pipeline = AdvancedSemanticRAGPipeline(collection_name=session_collection_name, request=request)
-    
-    all_chunks = []
+    try:
+        logger.info(f"🎯 Processing {len(submission_request.documents)} documents, {len(submission_request.questions)} questions")
+        
+        parsing_service = request.app.state.parsing_service
+        session_collection_name = f"opt_semantic_{uuid.uuid4().hex[:8]}"
+        rag_pipeline = OptimizedSemanticRAGPipeline(collection_name=session_collection_name, request=request)
+        
+        all_chunks = []
 
-    # Process documents with semantic understanding
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        for doc_idx, doc_url in enumerate(submission_request.documents):
+        # Process documents with optimized semantics
+        async with httpx.AsyncClient(timeout=90.0) as client:
+            for doc_idx, doc_url in enumerate(submission_request.documents):
+                try:
+                    logger.info(f"📥 Downloading document {doc_idx + 1}")
+                    response = await client.get(doc_url, follow_redirects=True)
+                    response.raise_for_status()
+
+                    file_name = f"doc_{doc_idx}_{uuid.uuid4().hex[:8]}.pdf"
+                    temp_file_path = os.path.join(UPLOAD_DIR, file_name)
+                    os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+                    with open(temp_file_path, "wb") as f:
+                        f.write(response.content)
+
+                    logger.info(f"📄 Processing with optimized semantics...")
+                    chunks = parsing_service.process_pdf_optimized_semantic(temp_file_path)
+                    chunk_dicts = [chunk.to_dict() for chunk in chunks]
+                    all_chunks.extend(chunk_dicts)
+
+                    os.remove(temp_file_path)
+                    logger.info(f"✅ Processed {len(chunks)} semantic chunks")
+
+                except Exception as e:
+                    logger.error(f"❌ Document processing failed: {e}")
+                    continue
+
+        logger.info(f"📊 Total semantic chunks: {len(all_chunks)}")
+
+        if not all_chunks:
+            logger.error("❌ No chunks processed!")
+            return SubmissionResponse(answers=[
+                Answer(question=q, answer="Document processing failed.")
+                for q in submission_request.questions
+            ])
+
+        # Add to semantic RAG pipeline
+        rag_pipeline.add_documents(all_chunks)
+
+        # Answer questions with semantic understanding
+        logger.info(f"❓ Answering questions with optimized semantics...")
+        answers = []
+        
+        for question in submission_request.questions:
             try:
-                logger.info(f"📥 Downloading document {doc_idx + 1}: {doc_url}")
-                response = await client.get(doc_url, follow_redirects=True)
-                response.raise_for_status()
-
-                file_name = os.path.basename(doc_url.split('?')[0]) or f"document_{doc_idx}.pdf"
-                temp_file_path = os.path.join(UPLOAD_DIR, f"temp_{uuid.uuid4()}_{file_name}")
-                os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-                with open(temp_file_path, "wb") as f:
-                    f.write(response.content)
-
-                logger.info(f"📄 Processing {file_name} with semantic analysis...")
-                chunks = parsing_service.process_pdf_semantically(temp_file_path)
-                chunk_dicts = [chunk.to_dict() for chunk in chunks]
-                all_chunks.extend(chunk_dicts)
-
-                os.remove(temp_file_path)
-                logger.info(f"✅ Processed {len(chunks)} semantic chunks from {file_name}")
-
+                answer = await rag_pipeline.answer_question(question)
+                answers.append(Answer(question=question, answer=answer))
             except Exception as e:
-                logger.error(f"❌ Failed to process document: {e}")
-                continue
-
-    logger.info(f"📊 Total semantic chunks: {len(all_chunks)}")
-
-    if not all_chunks:
-        logger.error("❌ No semantic chunks processed!")
-        failed_answers = [Answer(question=q, answer="No valid documents could be processed.") for q in submission_request.questions]
-        return SubmissionResponse(answers=failed_answers)
-
-    # Add to semantic RAG pipeline
-    rag_pipeline.add_documents(all_chunks)
-
-    # Answer questions with semantic understanding
-    logger.info(f"❓ Answering questions with semantic analysis...")
-    tasks = [rag_pipeline.answer_question(q) for q in submission_request.questions]
-    results = await asyncio.gather(*tasks)
-    
-    answers = [Answer(question=q, answer=ans) for q, ans in zip(submission_request.questions, results)]
-    
-    logger.info("🎉 All semantic questions processed!")
-    return SubmissionResponse(answers=answers)
+                logger.error(f"❌ Question failed: {e}")
+                answers.append(Answer(question=question, answer="Failed to process question."))
+        
+        logger.info("🎉 All semantic questions processed!")
+        return SubmissionResponse(answers=answers)
+        
+    except Exception as e:
+        logger.error(f"💥 CRITICAL ERROR: {e}")
+        return SubmissionResponse(answers=[
+            Answer(question=q, answer=f"System error: {str(e)}")
+            for q in submission_request.questions
+        ])
 
 @app.get("/")
 def read_root():
-    return {"message": "Advanced Semantic RAG System", "status": "healthy"}
+    return {"message": "Optimized Semantic RAG System", "status": "healthy"}
 
 @app.get("/health")
 def health_check():
-    return {"status": "healthy", "version": "2.0.0"}
-
-@app.post("/debug/semantic-analysis")
-async def debug_semantic_analysis(request: Request, submission_request: SubmissionRequest = Body(...)):
-    """Debug endpoint for semantic analysis"""
-    parsing_service = request.app.state.parsing_service
-    
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        doc_url = submission_request.documents[0]
-        response = await client.get(doc_url, follow_redirects=True)
-        response.raise_for_status()
-        
-        file_name = f"semantic_debug_{uuid.uuid4()}.pdf"
-        temp_file_path = os.path.join(UPLOAD_DIR, file_name)
-        os.makedirs(UPLOAD_DIR, exist_ok=True)
-        
-        with open(temp_file_path, "wb") as f:
-            f.write(response.content)
-        
-        chunks = parsing_service.process_pdf_semantically(temp_file_path)
-        
-        # Analyze semantic distribution
-        content_types = {}
-        for chunk in chunks:
-            types = chunk.metadata.get('content_types', '').split(', ')
-            for ctype in types:
-                if ctype:
-                    content_types[ctype] = content_types.get(ctype, 0) + 1
-        
-        os.remove(temp_file_path)
-        
-        return {
-            "total_chunks": len(chunks),
-            "content_type_distribution": content_types,
-            "average_chunk_length": sum(len(c.content) for c in chunks) // len(chunks) if chunks else 0,
-            "semantic_samples": [
-                {
-                    "content": chunk.content[:400] + "...",
-                    "metadata": chunk.metadata,
-                    "content_types": chunk.metadata.get('content_types', '')
-                }
-                for chunk in chunks[:5]
-            ]
-        }
+    return {"status": "healthy", "version": "2.1.0"}
