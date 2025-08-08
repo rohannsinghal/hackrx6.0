@@ -18,6 +18,8 @@ unstructuredenv/
 app/documents/
 app/chroma_db/
 _fast_parsed_output.json
+chroma_db/
+
 
 # IDE and OS files
 .vscode/

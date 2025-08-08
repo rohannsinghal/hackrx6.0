@@ -80,15 +80,15 @@ class Answer(BaseModel):
 class SubmissionResponse(BaseModel):
     answers: List[Answer]
 
-# RAG Pipeline Class
 class RAGPipeline:
-    def __init__(self, collection_name: str):
+    def __init__(self, collection_name: str, request: Request):
+        # --- FIX: Get models and clients from the app state via the request ---
         self.collection_name = collection_name
-        self.collection = chroma_client.get_or_create_collection(name=self.collection_name)
-
-    # In app/main_api.py, inside the RAGPipeline class
-
-    # In app/main_api.py, inside the RAGPipeline class
+        self.request = request
+        self.chroma_client = request.app.state.chroma_client
+        self.embedding_model = request.app.state.embedding_model
+        self.groq_client = request.app.state.groq_client
+        self.collection = self.chroma_client.get_or_create_collection(name=self.collection_name)
 
     def add_documents(self, chunks: List[Dict]):
         if not chunks:
@@ -97,13 +97,10 @@ class RAGPipeline:
         
         logger.info(f"Starting to add {len(chunks)} chunks...")
         
-        # --- START OF FIX ---
-        # The 'chunks' variable is a list of dictionaries. This code correctly
-        # uses dictionary key access `c['key']` to get the data.
+        # Use instance variables to access models
         contents = [c['content'] for c in chunks]
         metadatas = [c['metadata'] for c in chunks]
         ids = [c['chunk_id'] for c in chunks]
-        # --- END OF FIX ---
         
         self.collection.add(
             embeddings=self.embedding_model.encode(contents, show_progress_bar=True).tolist(),
@@ -115,8 +112,10 @@ class RAGPipeline:
 
     def query_documents(self, query: str, n_results: int = 5) -> List[Dict]:
         if not self.collection.count(): return []
+        
         results = self.collection.query(
-            query_embeddings=embedding_model.encode([query]).tolist(),
+            # Use instance variable for the model
+            query_embeddings=self.embedding_model.encode([query]).tolist(),
             n_results=min(n_results, self.collection.count()),
             include=["documents", "metadatas"]
         )
@@ -128,12 +127,13 @@ class RAGPipeline:
         user_prompt = f"REFERENCE TEXT:\n{context}\n\nQUESTION: {query}"
         
         try:
-            # --- API KEY ROTATION ---
-            groq_client.api_key = get_next_api_key()
-            logger.info(f"Using Groq API key ending in ...{groq_client.api_key[-4:]}")
+            # --- FIX: Access the API key cycler from the app state ---
+            self.groq_client.api_key = next(self.request.app.state.api_key_cycler)
+            logger.info(f"Using Groq API key ending in ...{self.groq_client.api_key[-4:]}")
             
             response = await asyncio.to_thread(
-                groq_client.chat.completions.create,
+                # Use instance variable for the client
+                self.groq_client.chat.completions.create,
                 model="llama3-8b-8192",
                 messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
                 temperature=0.0,
