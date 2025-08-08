@@ -74,6 +74,10 @@ class GroqLLM(LLM):
     groq_client = any
     api_key_manager = any
         
+    class Config:
+        """Configuration for this Pydantic model."""
+        arbitrary_types_allowed = True
+    
     @property
     def _llm_type(self) -> str:
         return "groq"
