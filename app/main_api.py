@@ -209,7 +209,7 @@ class MultiLLMManager:
         )
         return response.choices[0].message.content.strip()
 
-# --- UNIVERSAL DOCUMENT PROCESSOR (KEEPING ALL YOUR EXCELLENT FEATURES) ---
+# --- COMPLETE UNIVERSAL DOCUMENT PROCESSOR (FROM YOUR WORKING CODE) ---
 class UniversalDocumentProcessor:
     def __init__(self):
         self.chunk_size = 1000
@@ -221,24 +221,30 @@ class UniversalDocumentProcessor:
         self.processors = {
             '.pdf': self.process_pdf,
             '.docx': self.process_docx,
+            '.doc': self.process_doc,
             '.xlsx': self.process_excel,
+            '.xls': self.process_excel,
             '.csv': self.process_csv,
             '.txt': self.process_text,
             '.html': self.process_html,
+            '.xml': self.process_xml,
+            '.eml': self.process_email,
+            '.zip': self.process_archive,
             '.json': self.process_json
         }
         
         logger.info("⚡ Universal Document Processor (No Local Models)")
     
-    # ... (KEEPING ALL YOUR EXISTING DOCUMENT PROCESSING METHODS)
-    # I'll just show the key ones for brevity
+    def get_file_hash(self, content: bytes) -> str:
+        """Generate shorter hash for caching"""
+        return hashlib.md5(content).hexdigest()[:8]
     
     async def process_document(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
-        """Process document (same as your existing method)"""
-        file_hash = hashlib.md5(content).hexdigest()[:8]
+        """Process any document format with optimized caching"""
+        file_hash = self.get_file_hash(content)
         
         if file_hash in self.cache:
-            logger.info(f"📦 Cache hit")
+            logger.info(f"📦 Cache hit for {os.path.basename(file_path)}")
             return self.cache[file_hash]
         
         file_ext = Path(file_path).suffix.lower()
@@ -253,10 +259,337 @@ class UniversalDocumentProcessor:
             logger.info(f"✅ Processed {os.path.basename(file_path)}: {len(chunks)} chunks")
             return chunks
         except Exception as e:
-            logger.error(f"❌ Processing failed: {e}")
+            logger.error(f"❌ Processing failed for {file_path}: {e}")
+            return self._emergency_text_extraction(content, file_path)
+    
+    def _detect_file_type(self, content: bytes) -> str:
+        """Detect file type from content"""
+        if content.startswith(b'%PDF'):
+            return '.pdf'
+        elif content.startswith(b'PK'):
+            return '.docx' if b'word/' in content[:1000] else '.zip'
+        elif content.startswith(b'<html') or content.startswith(b'<!DOCTYPE'):
+            return '.html'
+        elif content.startswith(b'<?xml'):
+            return '.xml'
+        else:
+            return '.txt'
+    
+    # --- PDF PROCESSING (FROM YOUR WORKING CODE) ---
+    async def process_pdf(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
+        """Enhanced PDF processing with speed optimizations"""
+        chunks = []
+        temp_path = f"/tmp/{uuid.uuid4().hex[:6]}.pdf"
+        
+        with open(temp_path, 'wb') as f:
+            f.write(content)
+        
+        try:
+            doc = fitz.open(temp_path)
+            full_text = ""
+            
+            for page_num in range(min(len(doc), self.max_pages)):
+                page = doc[page_num]
+                text = page.get_text()
+                
+                if text.strip():
+                    full_text += f"\n\nPage {page_num + 1}:\n{self._clean_text(text)}"
+            
+            doc.close()
+            
+            # Optimized table extraction
+            table_text = await self._extract_pdf_tables_fast(temp_path)
+            if table_text:
+                full_text += f"\n\n=== TABLES ===\n{table_text}"
+            
+            chunks = self._create_semantic_chunks(full_text, file_path, "pdf")
+            
+        except Exception as e:
+            logger.error(f"PDF processing error: {e}")
+            chunks = self._emergency_text_extraction(content, file_path)
+        
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        
+        return chunks
+    
+    async def _extract_pdf_tables_fast(self, file_path: str) -> str:
+        """SPEED-OPTIMIZED table extraction"""
+        table_text = ""
+        try:
+            with pdfplumber.open(file_path) as pdf:
+                for page_num, page in enumerate(pdf.pages[:10]):
+                    tables = page.find_tables()
+                    for i, table in enumerate(tables[:1]):
+                        try:
+                            table_data = table.extract()
+                            if table_data and len(table_data) > 1:
+                                table_md = f"\n**Table {i+1} (Page {page_num+1})**\n"
+                                for row in table_data[:12]:
+                                    if row:
+                                        clean_row = [str(cell or "").strip()[:30] for cell in row]
+                                        table_md += "| " + " | ".join(clean_row) + " |\n"
+                                table_text += table_md + "\n"
+                        except:
+                            continue
+        except Exception as e:
+            logger.warning(f"Table extraction failed: {e}")
+        
+        return table_text
+    
+    # --- DOCX PROCESSING (FROM YOUR WORKING CODE) ---
+    async def process_docx(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
+        """Process DOCX files"""
+        temp_path = f"/tmp/{uuid.uuid4().hex[:6]}.docx"
+        with open(temp_path, 'wb') as f:
+            f.write(content)
+        
+        try:
+            doc = docx.Document(temp_path)
+            full_text = ""
+            
+            for para in doc.paragraphs:
+                if para.text.strip():
+                    full_text += para.text + "\n"
+            
+            for table in doc.tables:
+                table_text = "\n**TABLE**\n"
+                for row in table.rows:
+                    row_text = []
+                    for cell in row.cells:
+                        row_text.append(cell.text.strip())
+                    table_text += "| " + " | ".join(row_text) + " |\n"
+                full_text += table_text + "\n"
+            
+            chunks = self._create_semantic_chunks(full_text, file_path, "docx")
+            
+        except Exception as e:
+            logger.error(f"DOCX processing error: {e}")
+            chunks = self._emergency_text_extraction(content, file_path)
+        
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        
+        return chunks
+    
+    async def process_doc(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
+        """Process DOC files (fallback to text extraction)"""
+        return self._emergency_text_extraction(content, file_path)
+    
+    # --- EXCEL PROCESSING (FROM YOUR WORKING CODE) ---
+    async def process_excel(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
+        """Process Excel files"""
+        temp_path = f"/tmp/{uuid.uuid4().hex[:6]}.xlsx"
+        with open(temp_path, 'wb') as f:
+            f.write(content)
+        
+        try:
+            workbook = openpyxl.load_workbook(temp_path, read_only=True)
+            full_text = ""
+            
+            for sheet_name in workbook.sheetnames[:3]:
+                sheet = workbook[sheet_name]
+                full_text += f"\n**Sheet: {sheet_name}**\n"
+                
+                for row_num, row in enumerate(sheet.iter_rows(max_row=50, values_only=True)):
+                    if row_num == 0 or any(cell for cell in row):
+                        row_text = [str(cell or "").strip()[:30] for cell in row[:8]]
+                        full_text += "| " + " | ".join(row_text) + " |\n"
+            
+            workbook.close()
+            chunks = self._create_semantic_chunks(full_text, file_path, "excel")
+            
+        except Exception as e:
+            logger.error(f"Excel processing error: {e}")
+            chunks = self._emergency_text_extraction(content, file_path)
+        
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        
+        return chunks
+    
+    # --- OTHER FORMAT PROCESSORS (FROM YOUR WORKING CODE) ---
+    async def process_csv(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
+        try:
+            text_content = content.decode('utf-8', errors='ignore')
+            lines = text_content.split('\n')
+            
+            full_text = "**CSV DATA**\n"
+            for i, line in enumerate(lines[:100]):
+                if line.strip():
+                    full_text += f"| {line} |\n"
+            
+            return self._create_semantic_chunks(full_text, file_path, "csv")
+        except Exception as e:
+            logger.error(f"CSV processing error: {e}")
             return []
     
-    # ... (ALL YOUR EXISTING PROCESSING METHODS STAY THE SAME)
+    async def process_text(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
+        try:
+            text = content.decode('utf-8', errors='ignore')
+            return self._create_semantic_chunks(text, file_path, "text")
+        except Exception as e:
+            logger.error(f"Text processing error: {e}")
+            return []
+    
+    async def process_html(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
+        try:
+            soup = BeautifulSoup(content, 'html.parser')
+            for script in soup(["script", "style"]):
+                script.decompose()
+            text = soup.get_text()
+            return self._create_semantic_chunks(text, file_path, "html")
+        except Exception as e:
+            logger.error(f"HTML processing error: {e}")
+            return []
+    
+    async def process_xml(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
+        try:
+            root = ET.fromstring(content)
+            def extract_text(element, level=0):
+                text = ""
+                if element.text and element.text.strip():
+                    text += f"{'  ' * level}{element.tag}: {element.text.strip()}\n"
+                for child in element:
+                    text += extract_text(child, level + 1)
+                return text
+            full_text = extract_text(root)
+            return self._create_semantic_chunks(full_text, file_path, "xml")
+        except Exception as e:
+            logger.error(f"XML processing error: {e}")
+            return []
+    
+    async def process_email(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
+        try:
+            msg = email.message_from_bytes(content, policy=default)
+            full_text = f"**EMAIL**\n"
+            full_text += f"From: {msg.get('From', 'Unknown')}\n"
+            full_text += f"Subject: {msg.get('Subject', 'No Subject')}\n\n"
+            
+            if msg.is_multipart():
+                for part in msg.walk():
+                    if part.get_content_type() == "text/plain":
+                        body = part.get_content()
+                        full_text += f"Content:\n{body}\n"
+            else:
+                body = msg.get_content()
+                full_text += f"Content:\n{body}\n"
+            
+            return self._create_semantic_chunks(full_text, file_path, "email")
+        except Exception as e:
+            logger.error(f"Email processing error: {e}")
+            return []
+    
+    async def process_archive(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
+        temp_path = f"/tmp/{uuid.uuid4().hex[:6]}.zip"
+        with open(temp_path, 'wb') as f:
+            f.write(content)
+        
+        chunks = []
+        try:
+            if file_path.endswith('.zip'):
+                with zipfile.ZipFile(temp_path, 'r') as zip_file:
+                    for file_info in zip_file.filelist[:5]:
+                        try:
+                            file_content = zip_file.read(file_info)
+                            sub_chunks = await self.process_document(file_info.filename, file_content)
+                            chunks.extend(sub_chunks[:15])
+                        except:
+                            continue
+        except Exception as e:
+            logger.error(f"Archive processing error: {e}")
+        
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        
+        return chunks
+    
+    async def process_json(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
+        try:
+            data = json.loads(content.decode('utf-8'))
+            full_text = json.dumps(data, indent=2, ensure_ascii=False)
+            return self._create_semantic_chunks(full_text, file_path, "json")
+        except Exception as e:
+            logger.error(f"JSON processing error: {e}")
+            return []
+    
+    # --- UTILITY METHODS (FROM YOUR WORKING CODE) ---
+    def _clean_text(self, text: str) -> str:
+        """Clean extracted text"""
+        text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
+        text = re.sub(r'\s+', ' ', text)
+        
+        noise_patterns = [
+            r'Office of.*Insurance Ombudsman.*?\n',
+            r'Lalit Bhawan.*?\n',
+            r'^\d+\s*$'
+        ]
+        
+        for pattern in noise_patterns:
+            text = re.sub(pattern, '', text, flags=re.MULTILINE)
+        
+        return text.strip()
+    
+    def _create_semantic_chunks(self, text: str, source: str, doc_type: str) -> List[Dict[str, Any]]:
+        """Create semantic chunks from text"""
+        text = self._clean_text(text)
+        
+        if not text or len(text) < 50:
+            return []
+        
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+        chunks = []
+        current_chunk = ""
+        
+        for sentence in sentences:
+            if len(current_chunk) + len(sentence) <= self.chunk_size:
+                current_chunk += sentence + " "
+            else:
+                if current_chunk.strip():
+                    chunks.append(current_chunk.strip())
+                current_chunk = sentence + " "
+        
+        if current_chunk.strip():
+            chunks.append(current_chunk.strip())
+        
+        structured_chunks = []
+        for i, chunk_text in enumerate(chunks[:self.max_chunks]):
+            structured_chunks.append({
+                "content": chunk_text,
+                "metadata": {
+                    "source": os.path.basename(source),
+                    "chunk_index": i,
+                    "document_type": doc_type,
+                    "chunk_length": len(chunk_text)
+                },
+                "chunk_id": str(uuid.uuid4())
+            })
+        
+        return structured_chunks
+    
+    def _emergency_text_extraction(self, content: bytes, file_path: str) -> List[Dict[str, Any]]:
+        """Emergency text extraction for unsupported formats"""
+        try:
+            text = content.decode('utf-8', errors='ignore')
+            if len(text) > 50:
+                return self._create_semantic_chunks(text, file_path, "unknown")
+        except:
+            pass
+        
+        return [{
+            "content": "Failed to extract content from document",
+            "metadata": {
+                "source": os.path.basename(file_path),
+                "chunk_index": 0,
+                "document_type": "error",
+                "error": True
+            },
+            "chunk_id": str(uuid.uuid4())
+        }]
 
 # --- LIGHTWEIGHT EMBEDDING WRAPPER (FOR CHROMA) ---
 class KaggleEmbeddingWrapper:
