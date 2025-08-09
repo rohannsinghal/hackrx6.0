@@ -1,14 +1,18 @@
-# --- OPTIMIZED SEMANTIC RAG SYSTEM ---
+# --- ULTIMATE HACKATHON WINNING RAG SYSTEM ---
 
 import os
 import json
 import uuid
 import time
 import re
-from typing import List, Dict, Any, Optional
-import logging
 import asyncio
+import logging
+from typing import List, Dict, Any, Optional, Union
 from collections import defaultdict
+from itertools import cycle
+import hashlib
+import mimetypes
+from pathlib import Path
 
 # FastAPI and core dependencies
 from fastapi import FastAPI, Body, HTTPException, Request, Depends, Header
@@ -24,782 +28,974 @@ from langchain.llms.base import LLM
 from langchain.callbacks.manager import CallbackManagerForLLMRun
 from langchain.schema.document import Document as LangChainDocument
 
-# Document processing imports
+# Multi-format document processing
 import fitz  # PyMuPDF
 import pdfplumber
+import docx  # python-docx
+import openpyxl
+import csv
+import zipfile
+import rarfile
+import email
+from email.policy import default
+import eml_parser
+from bs4 import BeautifulSoup
+import xml.etree.ElementTree as ET
 
-# LLM Integration
+# Multiple LLM providers
 import groq
+import openai
+import google.generativeai as genai
+
+# Other dependencies
 import httpx
 from dotenv import load_dotenv
+import cachetools
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Setup
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Optimized Semantic RAG", version="2.1.0")
+app = FastAPI(title="Ultimate Hackathon RAG System", version="3.0.0")
 
-# Updated CORS middleware for hackathon
+# Enhanced CORS for all scenarios
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
-    allow_credentials=True, 
-    allow_methods=["GET", "POST"],
-    allow_headers=["*", "Authorization", "Content-Type"],
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# --- AUTHENTICATION MIDDLEWARE ---
+# --- ANTI-JAILBREAK SECURITY SYSTEM ---
 
-async def verify_bearer_token(authorization: str = Header(None)):
-    """Verify Bearer token authentication as required by hackathon"""
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Authorization header required")
-    
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid authorization format. Use 'Bearer <token>'")
-    
-    token = authorization.replace("Bearer ", "")
-    
-    # Basic token validation
-    if len(token) < 10:
-        raise HTTPException(status_code=401, detail="Invalid token format")
-    
-    # For hackathon, we accept any properly formatted Bearer token
-    # In production, you would validate against a specific token or database
-    logger.info(f"✅ Authentication successful with token: {token[:10]}...")
-    return token
-
-# --- OPTIMIZED SEMANTIC DOCUMENT PARSER ---
-
-class DocumentChunk:
-    def __init__(self, content: str, metadata: Dict[str, Any], chunk_id: str):
-        self.content = content
-        self.metadata = metadata
-        self.chunk_id = chunk_id
-
-    def to_dict(self):
-        return {
-            "content": self.content,
-            "metadata": self.metadata,
-            "chunk_id": self.chunk_id
-        }
-
-class OptimizedSemanticParser:
+class SecurityGuard:
     def __init__(self):
-        # Optimized parameters - balanced between quality and performance
-        self.chunk_size = 1200
-        self.chunk_overlap = 180
-        self.max_chunks = 200  # Sweet spot for memory vs coverage
-        self.max_pages = 20    # Reduced from 30
-        logger.info("OptimizedSemanticParser initialized")
-
-    def semantic_text_split(self, text: str, source: str) -> List[str]:
-        """Optimized semantic text splitting - keeps intelligence while being efficient"""
-        if not text or len(text) < 100:
-            return [text] if text else []
-        
-        chunks = []
-        
-        # Semantic boundary patterns (optimized list)
-        semantic_patterns = [
-            r'\n\s*(?:\d+\.)+\s*[A-Z][^.\n]*[.:]',  # Numbered sections
-            r'\n\s*[A-Z][A-Z\s]{8,}[:\n]',  # ALL CAPS HEADINGS
-            r'\n\s*(?:EXCLUSIONS?|BENEFITS?|COVERAGE|DEFINITIONS?)',  # Key sections
-            r'\n\s*(?:WAITING\s+PERIOD|GRACE\s+PERIOD|CLAIMS?)',  # Important terms
+        self.jailbreak_patterns = [
+            r'ignore.*previous.*instructions',
+            r'act.*as.*different.*character',
+            r'generate.*code.*(?:javascript|python|html)',
+            r'write.*program',
+            r'roleplay.*as',
+            r'pretend.*you.*are',
+            r'system.*prompt',
+            r'override.*settings',
+            r'bypass.*restrictions',
+            r'admin.*mode',
+            r'developer.*mode',
+            r'tell.*me.*about.*yourself',
+            r'what.*are.*you',
+            r'who.*created.*you'
         ]
         
-        # Find semantic boundaries efficiently
+    def detect_jailbreak(self, text: str) -> bool:
+        """Detect jailbreak attempts"""
+        text_lower = text.lower()
+        return any(re.search(pattern, text_lower) for pattern in self.jailbreak_patterns)
+    
+    def sanitize_response(self, question: str, answer: str) -> str:
+        """Sanitize responses against jailbreaks"""
+        if self.detect_jailbreak(question):
+            return "I can only provide information based on the document content provided. Please ask questions about the document."
+        
+        # Remove any potential code or script tags
+        answer = re.sub(r'<script.*?</script>', '', answer, flags=re.DOTALL | re.IGNORECASE)
+        answer = re.sub(r'<.*?>', '', answer)  # Remove HTML tags
+        
+        return answer
+
+# --- MULTI-LLM PROVIDER SYSTEM ---
+
+class MultiLLMManager:
+    def __init__(self):
+        # Initialize multiple LLM providers
+        self.groq_keys = cycle([k.strip() for k in os.getenv("GROQ_API_KEYS", "").split(',') if k.strip()])
+        self.openai_keys = cycle([k.strip() for k in os.getenv("OPENAI_API_KEYS", "").split(',') if k.strip()])
+        self.gemini_keys = cycle([k.strip() for k in os.getenv("GEMINI_API_KEYS", "").split(',') if k.strip()])
+        
+        self.providers = ['groq', 'openai', 'gemini']
+        self.current_provider_index = 0
+        
+        logger.info("🔑 Multi-LLM Manager initialized with fallback support")
+    
+    async def get_response(self, prompt: str, max_tokens: int = 900) -> str:
+        """Get response with automatic fallback between providers"""
+        for attempt in range(len(self.providers)):
+            try:
+                provider = self.providers[self.current_provider_index]
+                
+                if provider == 'groq':
+                    return await self._groq_response(prompt, max_tokens)
+                elif provider == 'openai':
+                    return await self._openai_response(prompt, max_tokens)
+                elif provider == 'gemini':
+                    return await self._gemini_response(prompt, max_tokens)
+                    
+            except Exception as e:
+                logger.warning(f"{provider} failed: {e}")
+                self.current_provider_index = (self.current_provider_index + 1) % len(self.providers)
+                continue
+        
+        return "Error: All LLM providers failed"
+    
+    async def _groq_response(self, prompt: str, max_tokens: int) -> str:
+        key = next(self.groq_keys)
+        client = groq.Groq(api_key=key)
+        
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            max_tokens=max_tokens,
+            top_p=0.9
+        )
+        return response.choices[0].message.content.strip()
+    
+    async def _openai_response(self, prompt: str, max_tokens: int) -> str:
+        key = next(self.openai_keys)
+        openai.api_key = key
+        
+        response = await openai.ChatCompletion.acreate(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            max_tokens=max_tokens
+        )
+        return response.choices[0].message.content.strip()
+    
+    async def _gemini_response(self, prompt: str, max_tokens: int) -> str:
+        key = next(self.gemini_keys)
+        genai.configure(api_key=key)
+        
+        model = genai.GenerativeModel('gemini-pro')
+        response = await model.generate_content_async(prompt)
+        return response.text.strip()
+
+# --- UNIVERSAL DOCUMENT PROCESSOR ---
+
+class UniversalDocumentProcessor:
+    def __init__(self):
+        self.chunk_size = 1200
+        self.chunk_overlap = 200
+        self.max_chunks = 250
+        self.max_pages = 30
+        
+        # Smart caching system
+        self.cache = cachetools.TTLCache(maxsize=100, ttl=3600)  # 1 hour TTL
+        self.security_guard = SecurityGuard()
+        
+        # Supported formats
+        self.processors = {
+            '.pdf': self.process_pdf,
+            '.docx': self.process_docx,
+            '.doc': self.process_doc,
+            '.xlsx': self.process_excel,
+            '.xls': self.process_excel,
+            '.csv': self.process_csv,
+            '.txt': self.process_text,
+            '.html': self.process_html,
+            '.xml': self.process_xml,
+            '.eml': self.process_email,
+            '.zip': self.process_archive,
+            '.rar': self.process_archive,
+            '.json': self.process_json
+        }
+        
+        logger.info("🚀 Universal Document Processor initialized")
+    
+    def get_file_hash(self, content: bytes) -> str:
+        """Generate hash for caching"""
+        return hashlib.md5(content).hexdigest()
+    
+    async def process_document(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
+        """Process any document format with caching"""
+        file_hash = self.get_file_hash(content)
+        
+        # Check cache first
+        if file_hash in self.cache:
+            logger.info(f"📦 Cache hit for {os.path.basename(file_path)}")
+            return self.cache[file_hash]
+        
+        # Detect file type
+        file_ext = Path(file_path).suffix.lower()
+        if not file_ext:
+            file_ext = self._detect_file_type(content)
+        
+        # Process based on file type
+        processor = self.processors.get(file_ext, self.process_text)
+        
+        try:
+            chunks = await processor(file_path, content)
+            
+            # Cache the result
+            self.cache[file_hash] = chunks
+            
+            logger.info(f"✅ Processed {os.path.basename(file_path)}: {len(chunks)} chunks")
+            return chunks
+            
+        except Exception as e:
+            logger.error(f"❌ Processing failed for {file_path}: {e}")
+            return self._emergency_text_extraction(content, file_path)
+    
+    def _detect_file_type(self, content: bytes) -> str:
+        """Detect file type from content"""
+        if content.startswith(b'%PDF'):
+            return '.pdf'
+        elif content.startswith(b'PK'):
+            return '.docx' if b'word/' in content[:1000] else '.zip'
+        elif content.startswith(b'<html') or content.startswith(b'<!DOCTYPE'):
+            return '.html'
+        elif content.startswith(b'<?xml'):
+            return '.xml'
+        else:
+            return '.txt'
+    
+    # --- PDF PROCESSING (Enhanced) ---
+    async def process_pdf(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
+        """Enhanced PDF processing with tables and images"""
+        chunks = []
+        
+        with open(file_path, 'wb') as f:
+            f.write(content)
+        
+        try:
+            # Extract text with PyMuPDF
+            doc = fitz.open(file_path)
+            full_text = ""
+            
+            for page_num in range(min(len(doc), self.max_pages)):
+                page = doc[page_num]
+                
+                # Extract text
+                text = page.get_text()
+                
+                # Extract images as context (if they contain text)
+                image_list = page.get_images()
+                for img in image_list[:3]:  # Limit images
+                    try:
+                        xref = img[0]
+                        base_image = doc.extract_image(xref)
+                        # Could add OCR here if needed
+                    except:
+                        pass
+                
+                if text.strip():
+                    full_text += f"\n\nPage {page_num + 1}:\n{self._clean_text(text)}"
+            
+            doc.close()
+            
+            # Extract tables with pdfplumber
+            table_text = await self._extract_pdf_tables(file_path)
+            if table_text:
+                full_text += f"\n\n=== TABLES ===\n{table_text}"
+            
+            # Create semantic chunks
+            chunks = self._create_semantic_chunks(full_text, file_path, "pdf")
+            
+        except Exception as e:
+            logger.error(f"PDF processing error: {e}")
+            chunks = self._emergency_text_extraction(content, file_path)
+        
+        finally:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        
+        return chunks
+    
+    async def _extract_pdf_tables(self, file_path: str) -> str:
+        """Extract tables from PDF"""
+        table_text = ""
+        try:
+            with pdfplumber.open(file_path) as pdf:
+                for page_num, page in enumerate(pdf.pages[:15]):
+                    tables = page.find_tables()
+                    for i, table in enumerate(tables[:3]):
+                        try:
+                            table_data = table.extract()
+                            if table_data and len(table_data) > 1:
+                                table_md = f"\n**Table {i+1} (Page {page_num+1})**\n"
+                                for row in table_data[:20]:
+                                    if row:
+                                        clean_row = [str(cell or "").strip()[:50] for cell in row]
+                                        table_md += "| " + " | ".join(clean_row) + " |\n"
+                                table_text += table_md + "\n"
+                        except:
+                            continue
+        except Exception as e:
+            logger.warning(f"Table extraction failed: {e}")
+        
+        return table_text
+    
+    # --- DOCX/DOC PROCESSING ---
+    async def process_docx(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
+        """Process DOCX files"""
+        with open(file_path, 'wb') as f:
+            f.write(content)
+        
+        try:
+            doc = docx.Document(file_path)
+            full_text = ""
+            
+            # Extract paragraphs
+            for para in doc.paragraphs:
+                if para.text.strip():
+                    full_text += para.text + "\n"
+            
+            # Extract tables
+            for table in doc.tables:
+                table_text = "\n**TABLE**\n"
+                for row in table.rows:
+                    row_text = []
+                    for cell in row.cells:
+                        row_text.append(cell.text.strip())
+                    table_text += "| " + " | ".join(row_text) + " |\n"
+                full_text += table_text + "\n"
+            
+            chunks = self._create_semantic_chunks(full_text, file_path, "docx")
+            
+        except Exception as e:
+            logger.error(f"DOCX processing error: {e}")
+            chunks = self._emergency_text_extraction(content, file_path)
+        
+        finally:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        
+        return chunks
+    
+    async def process_doc(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
+        """Process DOC files (fallback to text extraction)"""
+        return self._emergency_text_extraction(content, file_path)
+    
+    # --- EXCEL PROCESSING ---
+    async def process_excel(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
+        """Process Excel files"""
+        with open(file_path, 'wb') as f:
+            f.write(content)
+        
+        try:
+            workbook = openpyxl.load_workbook(file_path, read_only=True)
+            full_text = ""
+            
+            for sheet_name in workbook.sheetnames[:5]:  # Max 5 sheets
+                sheet = workbook[sheet_name]
+                full_text += f"\n**Sheet: {sheet_name}**\n"
+                
+                # Get data as table
+                data = []
+                for row in sheet.iter_rows(max_row=min(sheet.max_row, 100), values_only=True):
+                    if any(cell for cell in row):  # Skip empty rows
+                        data.append([str(cell or "").strip() for cell in row])
+                
+                if data:
+                    # Format as table
+                    for row in data:
+                        full_text += "| " + " | ".join(row[:10]) + " |\n"  # Max 10 columns
+                
+                full_text += "\n"
+            
+            workbook.close()
+            chunks = self._create_semantic_chunks(full_text, file_path, "excel")
+            
+        except Exception as e:
+            logger.error(f"Excel processing error: {e}")
+            chunks = self._emergency_text_extraction(content, file_path)
+        
+        finally:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        
+        return chunks
+    
+    # --- CSV PROCESSING ---
+    async def process_csv(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
+        """Process CSV files"""
+        try:
+            text_content = content.decode('utf-8', errors='ignore')
+            lines = text_content.split('\n')
+            
+            full_text = "**CSV DATA**\n"
+            for i, line in enumerate(lines[:200]):  # Max 200 rows
+                if line.strip():
+                    # Parse CSV row
+                    row_data = next(csv.reader([line]))
+                    full_text += "| " + " | ".join(str(cell).strip()[:50] for cell in row_data) + " |\n"
+            
+            chunks = self._create_semantic_chunks(full_text, file_path, "csv")
+            
+        except Exception as e:
+            logger.error(f"CSV processing error: {e}")
+            chunks = self._emergency_text_extraction(content, file_path)
+        
+        return chunks
+    
+    # --- EMAIL PROCESSING ---
+    async def process_email(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
+        """Process email files"""
+        try:
+            # Parse email
+            msg = email.message_from_bytes(content, policy=default)
+            
+            full_text = f"**EMAIL**\n"
+            full_text += f"From: {msg.get('From', 'Unknown')}\n"
+            full_text += f"To: {msg.get('To', 'Unknown')}\n"
+            full_text += f"Subject: {msg.get('Subject', 'No Subject')}\n"
+            full_text += f"Date: {msg.get('Date', 'Unknown')}\n\n"
+            
+            # Extract body
+            if msg.is_multipart():
+                for part in msg.walk():
+                    if part.get_content_type() == "text/plain":
+                        body = part.get_content()
+                        full_text += f"Content:\n{body}\n"
+            else:
+                body = msg.get_content()
+                full_text += f"Content:\n{body}\n"
+            
+            chunks = self._create_semantic_chunks(full_text, file_path, "email")
+            
+        except Exception as e:
+            logger.error(f"Email processing error: {e}")
+            chunks = self._emergency_text_extraction(content, file_path)
+        
+        return chunks
+    
+    # --- HTML/XML PROCESSING ---
+    async def process_html(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
+        """Process HTML files"""
+        try:
+            soup = BeautifulSoup(content, 'html.parser')
+            
+            # Remove script and style tags
+            for script in soup(["script", "style"]):
+                script.decompose()
+            
+            # Extract text
+            text = soup.get_text()
+            
+            chunks = self._create_semantic_chunks(text, file_path, "html")
+            
+        except Exception as e:
+            logger.error(f"HTML processing error: {e}")
+            chunks = self._emergency_text_extraction(content, file_path)
+        
+        return chunks
+    
+    async def process_xml(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
+        """Process XML files"""
+        try:
+            root = ET.fromstring(content)
+            
+            def extract_text(element, level=0):
+                text = ""
+                if element.text and element.text.strip():
+                    text += f"{'  ' * level}{element.tag}: {element.text.strip()}\n"
+                for child in element:
+                    text += extract_text(child, level + 1)
+                return text
+            
+            full_text = extract_text(root)
+            chunks = self._create_semantic_chunks(full_text, file_path, "xml")
+            
+        except Exception as e:
+            logger.error(f"XML processing error: {e}")
+            chunks = self._emergency_text_extraction(content, file_path)
+        
+        return chunks
+    
+    # --- ARCHIVE PROCESSING ---
+    async def process_archive(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
+        """Process ZIP/RAR archives"""
+        with open(file_path, 'wb') as f:
+            f.write(content)
+        
+        chunks = []
+        try:
+            if file_path.endswith('.zip'):
+                with zipfile.ZipFile(file_path, 'r') as zip_file:
+                    for file_info in zip_file.filelist[:10]:  # Max 10 files
+                        try:
+                            file_content = zip_file.read(file_info)
+                            sub_chunks = await self.process_document(file_info.filename, file_content)
+                            chunks.extend(sub_chunks)
+                        except:
+                            continue
+            
+            # Could add RAR support here if needed
+            
+        except Exception as e:
+            logger.error(f"Archive processing error: {e}")
+            chunks = self._emergency_text_extraction(content, file_path)
+        
+        finally:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        
+        return chunks
+    
+    # --- JSON PROCESSING ---
+    async def process_json(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
+        """Process JSON files"""
+        try:
+            data = json.loads(content.decode('utf-8'))
+            full_text = json.dumps(data, indent=2, ensure_ascii=False)
+            chunks = self._create_semantic_chunks(full_text, file_path, "json")
+        except Exception as e:
+            logger.error(f"JSON processing error: {e}")
+            chunks = self._emergency_text_extraction(content, file_path)
+        
+        return chunks
+    
+    # --- TEXT PROCESSING ---
+    async def process_text(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
+        """Process plain text files"""
+        try:
+            text = content.decode('utf-8', errors='ignore')
+            chunks = self._create_semantic_chunks(text, file_path, "text")
+        except Exception as e:
+            logger.error(f"Text processing error: {e}")
+            chunks = []
+        
+        return chunks
+    
+    # --- UTILITY METHODS ---
+    def _clean_text(self, text: str) -> str:
+        """Clean extracted text"""
+        # Remove excessive whitespace
+        text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
+        text = re.sub(r'\s+', ' ', text)
+        
+        # Remove noise
+        noise_patterns = [
+            r'Office of the Insurance Ombudsman.*?\n',
+            r'Lalit Bhawan.*?\n',
+            r'^\d+\s*$'
+        ]
+        
+        for pattern in noise_patterns:
+            text = re.sub(pattern, '', text, flags=re.MULTILINE)
+        
+        return text.strip()
+    
+    def _create_semantic_chunks(self, text: str, source: str, doc_type: str) -> List[Dict[str, Any]]:
+        """Create semantic chunks from text"""
+        text = self._clean_text(text)
+        
+        if not text or len(text) < 50:
+            return []
+        
+        # Semantic boundary detection
         boundaries = [0]
-        for pattern in semantic_patterns:
-            matches = re.finditer(pattern, text, re.IGNORECASE)
-            boundaries.extend(match.start() for match in matches)
+        
+        # Look for section markers
+        section_patterns = [
+            r'\n\s*(?:\d+\.)+\s*[A-Z]',
+            r'\n\s*[A-Z][A-Z\s]{8,}:',
+            r'\n\s*(?:TABLE|SECTION|PART)',
+            r'\n\s*\*\*[^*]+\*\*'
+        ]
+        
+        for pattern in section_patterns:
+            for match in re.finditer(pattern, text):
+                boundaries.append(match.start())
         
         boundaries.append(len(text))
         boundaries = sorted(set(boundaries))
         
-        # Create semantic chunks
+        chunks = []
         for i in range(len(boundaries) - 1):
-            section_start = boundaries[i]
-            section_end = boundaries[i + 1]
-            section_text = text[section_start:section_end].strip()
+            start = boundaries[i]
+            end = boundaries[i + 1]
+            chunk_text = text[start:end].strip()
             
-            if len(section_text) <= self.chunk_size:
-                if section_text and len(section_text) > 80:
-                    chunks.append(section_text)
-            else:
-                # Split large sections intelligently
-                sub_chunks = self._split_section_smartly(section_text)
-                chunks.extend(sub_chunks)
-        
-        # Fallback to sentence-based splitting if no boundaries found
-        if len(chunks) == 0:
-            chunks = self._fallback_sentence_split(text)
-        
-        # Limit total chunks for memory management
-        chunks = chunks[:self.max_chunks]
-        logger.info(f"Split {source} into {len(chunks)} semantic chunks")
-        return chunks
-
-    def _split_section_smartly(self, text: str) -> List[str]:
-        """Smart splitting for large sections"""
-        chunks = []
-        sentences = re.split(r'(?<=[.!?])\s+', text)
-        
-        current_chunk = ""
-        for sentence in sentences:
-            if len(current_chunk) + len(sentence) <= self.chunk_size:
-                current_chunk += sentence + " "
-            else:
-                if current_chunk.strip():
-                    chunks.append(current_chunk.strip())
-                current_chunk = sentence + " "
-        
-        if current_chunk.strip():
-            chunks.append(current_chunk.strip())
-        
-        return chunks
-
-    def _fallback_sentence_split(self, text: str) -> List[str]:
-        """Fallback intelligent sentence-based splitting"""
-        chunks = []
-        sentences = re.split(r'(?<=[.!?])\s+', text)
-        
-        current_chunk = ""
-        for sentence in sentences:
-            if len(current_chunk) + len(sentence) <= self.chunk_size:
-                current_chunk += sentence + " "
-            else:
-                if current_chunk.strip():
-                    chunks.append(current_chunk.strip())
-                current_chunk = sentence + " "
-        
-        if current_chunk.strip():
-            chunks.append(current_chunk.strip())
-        
-        return chunks
-
-    def extract_semantic_tables(self, file_path: str) -> str:
-        """Optimized semantic table extraction"""
-        table_text = ""
-        table_count = 0
-        max_tables = 12  # Balanced number
-
-        try:
-            with pdfplumber.open(file_path) as pdf:
-                # Process key pages only
-                pages_to_process = list(range(min(len(pdf.pages), 18)))
-                
-                for page_num in pages_to_process:
-                    if table_count >= max_tables:
-                        break
-                        
-                    page = pdf.pages[page_num]
-                    tables = page.find_tables()
-
-                    for table in tables[:2]:  # Max 2 tables per page for efficiency
-                        if table_count >= max_tables:
-                            break
-
-                        try:
-                            table_data = table.extract()
-                            if table_data and len(table_data) >= 2:
-                                
-                                # Semantic relevance check (optimized)
-                                table_str = str(table_data).lower()
-                                insurance_keywords = ['premium', 'coverage', 'benefit', 'waiting', 'exclusion', 
-                                                    'claim', 'limit', 'sum', 'medical', 'hospital']
-                                
-                                if any(keyword in table_str for keyword in insurance_keywords):
-                                    # Skip administrative tables
-                                    if not any(admin in table_str for admin in ['ombudsman', 'lalit bhawan']):
-                                        
-                                        # Format table efficiently
-                                        table_md = f"\n**POLICY TABLE {table_count + 1} (Page {page_num + 1})**\n"
-                                        
-                                        # Limit rows for memory efficiency
-                                        limited_data = table_data[:min(15, len(table_data))]
-                                        
-                                        for row in limited_data:
-                                            if row:
-                                                row_str = " | ".join(str(cell or "")[:40] for cell in row)
-                                                table_md += f"| {row_str} |\n"
-                                        
-                                        table_text += table_md + "\n"
-                                        table_count += 1
-
-                        except Exception:
-                            continue
-
-                logger.info(f"Extracted {table_count} semantic tables")
-
-        except Exception as e:
-            logger.warning(f"Semantic table extraction failed: {e}")
-
-        return table_text
-
-    def process_pdf_optimized_semantic(self, file_path: str) -> List[DocumentChunk]:
-        """Optimized semantic PDF processing - keeps intelligence while being memory efficient"""
-        logger.info(f"🚀 Processing PDF with optimized semantics: {os.path.basename(file_path)}")
-        start_time = time.time()
-        chunks = []
-
-        try:
-            # Efficient text extraction
-            doc = fitz.open(file_path)
-            full_text = ""
-            total_pages = len(doc)
-            
-            # Process optimized number of pages
-            pages_to_process = list(range(min(total_pages, self.max_pages)))
-            
-            for page_num in pages_to_process:
-                try:
-                    page = doc[page_num]
-                    page_text = page.get_text()
-                    
-                    # Intelligent content filtering
-                    lines = page_text.split('\n')
-                    filtered_lines = []
-                    
-                    for line in lines:
-                        line = line.strip()
-                        if (line and len(line) > 15 and 
-                            not any(noise in line.lower() for noise in 
-                                  ['ombudsman', 'lalit bhawan', 'page ']) and
-                            not re.match(r'^\d+\s*$', line)):  # Skip page numbers
-                            filtered_lines.append(line)
-                    
-                    clean_text = '\n'.join(filtered_lines)
-                    if clean_text and len(clean_text) > 100:
-                        full_text += f"\n\nPage {page_num + 1}:\n{clean_text}"
-                        
-                except Exception:
-                    continue
-
-            doc.close()
-
-            # Add semantic tables
-            table_content = self.extract_semantic_tables(file_path)
-            if table_content:
-                full_text += f"\n\n{'='*40}\nKEY POLICY TABLES\n{'='*40}\n{table_content}"
-
-            # Create semantic chunks
-            text_chunks = self.semantic_text_split(full_text, os.path.basename(file_path))
-
-            # Create chunks with optimized semantic metadata
-            for idx, chunk_text in enumerate(text_chunks):
-                # Lightweight semantic analysis
-                chunk_lower = chunk_text.lower()
-                
-                # Detect content types efficiently
-                content_types = []
-                type_indicators = {
-                    'definitions': ['means', 'definition', 'shall mean'],
-                    'coverage': ['coverage', 'covered', 'benefit'],
-                    'exclusions': ['exclusion', 'excluded', 'not covered'],
-                    'waiting_periods': ['waiting period', 'wait'],
-                    'claims': ['claim', 'settlement'],
-                    'premium': ['premium', 'payment', 'grace period'],
-                    'medical': ['hospital', 'medical', 'treatment']
-                }
-                
-                for content_type, indicators in type_indicators.items():
-                    if any(indicator in chunk_lower for indicator in indicators):
-                        content_types.append(content_type)
-                
-                # Calculate simple relevance score
-                insurance_terms = ['policy', 'coverage', 'benefit', 'exclusion', 'claim', 'premium']
-                relevance_score = sum(1 for term in insurance_terms if term in chunk_lower)
-
-                chunks.append(DocumentChunk(
-                    content=chunk_text,
-                    metadata={
-                        "source": os.path.basename(file_path),
-                        "chunk_index": idx,
-                        "document_type": "optimized_semantic",
-                        "content_types": ", ".join(content_types) if content_types else "general",
-                        "total_pages": total_pages,
-                        "chunk_length": len(chunk_text),
-                        "relevance_score": relevance_score,
-                        "has_tables": "table" in chunk_text.lower()
-                    },
-                    chunk_id=str(uuid.uuid4())
-                ))
-
-            elapsed = time.time() - start_time
-            logger.info(f"✅ Optimized semantic processing complete in {elapsed:.2f}s: {len(chunks)} chunks")
-            return chunks
-
-        except Exception as e:
-            logger.error(f"❌ Optimized semantic processing failed: {e}")
-            return self._emergency_fallback(file_path)
-
-    def _emergency_fallback(self, file_path: str) -> List[DocumentChunk]:
-        """Emergency fallback that still maintains some intelligence"""
-        logger.info("🆘 Emergency fallback with basic semantics")
-        try:
-            doc = fitz.open(file_path)
-            text_parts = []
-            
-            for page_num in range(min(15, len(doc))):
-                page = doc[page_num]
-                page_text = page.get_text()
-                
-                # Basic semantic filtering
-                if (len(page_text.strip()) > 100 and
-                    'ombudsman' not in page_text.lower()):
-                    text_parts.append(page_text)
-
-            doc.close()
-            full_text = "\n\n".join(text_parts)
-
-            # Simple but effective chunking
-            chunks = []
-            sentences = re.split(r'(?<=[.!?])\s+', full_text)
-            current_chunk = ""
-            
-            for sentence in sentences:
-                if len(current_chunk) + len(sentence) <= 1000:
-                    current_chunk += sentence + " "
-                else:
-                    if current_chunk.strip():
-                        chunks.append(DocumentChunk(
-                            content=current_chunk.strip(),
-                            metadata={
-                                "source": os.path.basename(file_path),
-                                "chunk_index": len(chunks),
-                                "document_type": "emergency_fallback"
-                            },
-                            chunk_id=str(uuid.uuid4())
-                        ))
-                    current_chunk = sentence + " "
-            
-            if current_chunk.strip():
-                chunks.append(DocumentChunk(
-                    content=current_chunk.strip(),
-                    metadata={
-                        "source": os.path.basename(file_path),
+            if len(chunk_text) > self.chunk_size:
+                # Split large chunks
+                sub_chunks = self._split_large_chunk(chunk_text)
+                for j, sub_chunk in enumerate(sub_chunks):
+                    chunks.append({
+                        "content": sub_chunk,
+                        "metadata": {
+                            "source": os.path.basename(source),
+                            "chunk_index": len(chunks),
+                            "document_type": doc_type,
+                            "chunk_length": len(sub_chunk),
+                            "is_sub_chunk": True,
+                            "parent_chunk": i
+                        },
+                        "chunk_id": str(uuid.uuid4())
+                    })
+            elif len(chunk_text) > 100:
+                chunks.append({
+                    "content": chunk_text,
+                    "metadata": {
+                        "source": os.path.basename(source),
                         "chunk_index": len(chunks),
-                        "document_type": "emergency_fallback"
+                        "document_type": doc_type,
+                        "chunk_length": len(chunk_text),
+                        "is_sub_chunk": False
                     },
-                    chunk_id=str(uuid.uuid4())
-                ))
-
-            return chunks[:100]  # Limit for safety
-
-        except Exception as e:
-            logger.error(f"Emergency fallback failed: {e}")
-            raise Exception("All processing methods failed")
-
-# --- GROQ LLM WRAPPER ---
-
-class GroqLLM(LLM):
-    groq_client: Any
-    api_key_manager: Any
-
-    class Config:
-        arbitrary_types_allowed = True
-
-    @property
-    def _llm_type(self) -> str:
-        return "groq"
-
-    def _call(self, prompt: str, stop: Optional[List[str]] = None, run_manager: Optional[CallbackManagerForLLMRun] = None) -> str:
+                    "chunk_id": str(uuid.uuid4())
+                })
+        
+        return chunks[:self.max_chunks]
+    
+    def _split_large_chunk(self, text: str) -> List[str]:
+        """Split large chunks intelligently"""
+        chunks = []
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+        
+        current_chunk = ""
+        for sentence in sentences:
+            if len(current_chunk) + len(sentence) <= self.chunk_size:
+                current_chunk += sentence + " "
+            else:
+                if current_chunk.strip():
+                    chunks.append(current_chunk.strip())
+                current_chunk = sentence + " "
+        
+        if current_chunk.strip():
+            chunks.append(current_chunk.strip())
+        
+        return chunks
+    
+    def _emergency_text_extraction(self, content: bytes, file_path: str) -> List[Dict[str, Any]]:
+        """Emergency text extraction for unsupported formats"""
         try:
-            api_key = self.api_key_manager.get_next_api_key()
-            self.groq_client.api_key = api_key
+            text = content.decode('utf-8', errors='ignore')
+            if len(text) > 50:
+                chunks = self._create_semantic_chunks(text, file_path, "unknown")
+                return chunks
+        except:
+            pass
+        
+        return [{
+            "content": "Failed to extract content from document",
+            "metadata": {
+                "source": os.path.basename(file_path),
+                "chunk_index": 0,
+                "document_type": "error",
+                "error": True
+            },
+            "chunk_id": str(uuid.uuid4())
+        }]
 
-            response = self.groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
-                max_tokens=900,
-                top_p=0.9,
-                stop=stop
-            )
+# --- ENHANCED RAG PIPELINE ---
 
-            return response.choices[0].message.content.strip()
-
-        except Exception as e:
-            logger.error(f"Groq LLM call failed: {e}")
-            return "Error generating response"
-
-# --- OPTIMIZED SEMANTIC RAG PIPELINE ---
-
-class OptimizedSemanticRAGPipeline:
-    def __init__(self, collection_name: str, request: Request):
+class UltimateRAGPipeline:
+    def __init__(self, collection_name: str, llm_manager: MultiLLMManager):
         self.collection_name = collection_name
-        self.embedding_model = request.app.state.embedding_model
-        self.groq_llm = request.app.state.groq_llm
+        self.llm_manager = llm_manager
+        self.security_guard = SecurityGuard()
         
-        self.vectorstore = Chroma(
-            collection_name=collection_name,
-            embedding_function=self.embedding_model,
-            persist_directory=CHROMA_PERSIST_DIR
-        )
-        self.qa_chain = None
-        logger.info(f"✅ Optimized semantic RAG pipeline initialized: {collection_name}")
-
-    def clean_response(self, answer: str) -> str:
-        """Comprehensive response cleaning for professional formatting"""
-        if not answer:
-            return answer
-        
-        # Remove excessive newlines first
-        answer = re.sub(r'\n\s*\n\s*\n+', '\n\n', answer)
-        answer = re.sub(r'\n\s*\n', '\n\n', answer)
-        
-        # Remove ALL excessive quotation marks - comprehensive patterns
-        # Remove quotes around single words
-        answer = re.sub(r'"(\w+)"', r'\1', answer)
-        
-        # Remove quotes around short phrases (2-5 words)
-        answer = re.sub(r'"([^"]{1,50})"', r'\1', answer)
-        
-        # Remove quotes around ALL CAPS words/phrases
-        answer = re.sub(r'"([A-Z\s]{2,50})"', r'\1', answer)
-        
-        # Remove quotes around numbers, percentages, amounts
-        answer = re.sub(r'"(Rs\.?\s*[\d,]+[/-]*)"', r'\1', answer)
-        answer = re.sub(r'"(\d+%)"', r'\1', answer)
-        answer = re.sub(r'"(\d+\s*(?:days?|months?|years?|lacs?))"', r'\1', answer)
-        answer = re.sub(r'"(\d+[.,]\d+)"', r'\1', answer)
-        
-        # Remove quotes around plan names and policy terms
-        answer = re.sub(r'"(Plan\s+[A-Z])"', r'\1', answer)
-        answer = re.sub(r'"([A-Z]+\s*[A-Z]*)"', r'\1', answer)
-        
-        # Clean up policy statement formats - make them flow naturally
-        answer = re.sub(r'[Aa]s stated in the policy[:\s]*"([^"]+)"', r'As per the policy, \1', answer)
-        answer = re.sub(r'[Aa]ccording to the policy[:\s]*"([^"]+)"', r'According to the policy, \1', answer)
-        answer = re.sub(r'[Tt]he policy states[:\s]*"([^"]+)"', r'The policy states that \1', answer)
-        answer = re.sub(r'[Aa]s per the policy[:\s]*"([^"]+)"', r'As per the policy, \1', answer)
-        answer = re.sub(r'[Tt]he policy mentions[:\s]*"([^"]+)"', r'The policy mentions that \1', answer)
-        
-        # Remove quotes from technical terms and common insurance phrases
-        insurance_terms = [
-            'sum insured', 'waiting period', 'grace period', 'pre-existing', 
-            'cumulative bonus', 'no claim discount', 'room rent', 'icu charges',
-            'ayush', 'hospital', 'medical expenses', 'policy period', 'exclusion',
-            'inpatient', 'outpatient', 'domiciliary', 'cashless', 'reimbursement'
-        ]
-        
-        for term in insurance_terms:
-            # Remove quotes around these terms (case insensitive)
-            pattern = f'"{re.escape(term)}"'
-            answer = re.sub(pattern, term, answer, flags=re.IGNORECASE)
-            # Also handle capitalized versions
-            pattern = f'"{re.escape(term.upper())}"'
-            answer = re.sub(pattern, term.upper(), answer, flags=re.IGNORECASE)
-        
-        # Clean up remaining problematic quote patterns
-        answer = re.sub(r'"\s*([^"]*)\s*"', r'\1', answer)  # Any remaining quoted text
-        
-        # Fix spacing issues
-        answer = re.sub(r'\s+', ' ', answer)  # Multiple spaces to single
-        answer = answer.replace(' ,', ',')    # Space before comma
-        answer = answer.replace(' .', '.')    # Space before period
-        answer = answer.replace('( ', '(')    # Space after opening parenthesis
-        answer = answer.replace(' )', ')')    # Space before closing parenthesis
-        
-        # Clean up line breaks within sentences
-        answer = re.sub(r'([a-z,])\s*\n\s*([a-z])', r'\1 \2', answer)
-        
-        # Final cleanup - remove any remaining escape characters
-        answer = answer.replace('\\"', '"')   # Remove escape characters
-        answer = answer.replace('\\n', ' ')   # Convert literal \n to space
-        answer = answer.replace('\\"', '')    # Remove any remaining escaped quotes
-        
-        # Ensure proper sentence structure
-        answer = re.sub(r'([.!?])\s*([A-Z])', r'\1 \2', answer)  # Space after sentence end
-        
-        return answer.strip()
-
-    def add_documents(self, chunks: List[Dict[str, Any]]):
-        if not chunks:
-            logger.error("❌ No chunks provided!")
-            return
-
-        logger.info(f"📚 Adding {len(chunks)} chunks with optimized semantic processing...")
-        
-        # Optimized semantic filtering
-        quality_chunks = []
-        for chunk in chunks:
-            content = chunk['content']
-            metadata = chunk.get('metadata', {})
-            
-            # Multi-factor quality assessment
-            quality_factors = []
-            
-            # Length factor
-            if len(content) > 120:
-                quality_factors.append(1)
-            
-            # Insurance relevance factor
-            insurance_terms = ['policy', 'coverage', 'benefit', 'exclusion', 'claim', 'premium', 
-                             'hospital', 'medical', 'treatment', 'waiting', 'insured']
-            term_count = sum(1 for term in insurance_terms if term in content.lower())
-            if term_count >= 2:
-                quality_factors.append(2)
-            
-            # Content type factor
-            content_types = metadata.get('content_types', '')
-            if content_types and content_types != 'general':
-                quality_factors.append(1)
-            
-            # Noise penalty
-            if any(noise in content.lower() for noise in ['ombudsman', 'lalit bhawan']):
-                quality_factors.append(-2)
-            
-            # Calculate final quality score
-            quality_score = sum(quality_factors)
-            
-            if quality_score > 0:
-                quality_chunks.append(chunk)
-
-        # Sort by relevance score if available
-        quality_chunks.sort(key=lambda x: x['metadata'].get('relevance_score', 0), reverse=True)
-        
-        # Limit for memory efficiency while keeping quality
-        if len(quality_chunks) > 120:
-            quality_chunks = quality_chunks[:120]
-
-        logger.info(f"📚 Filtered to {len(quality_chunks)} high-quality semantic chunks")
-
-        langchain_docs = [
-            LangChainDocument(page_content=chunk['content'], metadata=chunk['metadata'])
-            for chunk in quality_chunks
-        ]
-
-        self.vectorstore.add_documents(langchain_docs)
-        logger.info(f"✅ Added {len(langchain_docs)} semantic documents to vectorstore")
-
-        # Optimized retriever with semantic search
-        retriever = self.vectorstore.as_retriever(
-            search_type="mmr",  # Keep MMR for diversity
-            search_kwargs={
-                "k": 10,  # Balanced retrieval
-                "fetch_k": 20,  # Reasonable search space
-                "lambda_mult": 0.6  # Balance relevance vs diversity
-            }
-        )
-
-        # Enhanced semantic prompt template with strict formatting rules
-        prompt_template = PromptTemplate(
-            input_variables=["context", "question"],
-            template="""You are an expert insurance policy analyst. Analyze the policy document context to provide accurate, detailed answers.
-
-POLICY DOCUMENT CONTEXT:
-{context}
-
-QUESTION: {question}
-
-CRITICAL FORMATTING INSTRUCTIONS:
-- Write in natural, flowing sentences without excessive quotation marks
-- When referencing policy text, paraphrase or integrate naturally into sentences
-- Do NOT put quotes around single words, numbers, percentages, or short phrases
-- Do NOT put quotes around plan names (Plan A), amounts (Rs. 5,000), or time periods (30 days)
-- Write numbers and amounts directly: 30 days, 5%, Rs. 10,000, Plan A
-- Use quotes ONLY for exact lengthy policy clauses that need verbatim citation
-- Make the text read like professional analysis, not a quote-heavy document
-
-ANALYSIS INSTRUCTIONS:
-- Extract specific facts: numbers, percentages, time periods, conditions
-- Understand relationships between different policy sections  
-- Be precise about conditions, exceptions, and qualifying circumstances
-- If information is partial, state what's available and note limitations
-
-RESPONSE STYLE:
-Write a comprehensive, naturally flowing analysis that reads professionally without excessive quotation marks or formatting issues.
-
-ANSWER:"""
-        )
-
-        self.qa_chain = RetrievalQA.from_chain_type(
-            llm=self.groq_llm,
-            chain_type="stuff",
-            retriever=retriever,
-            chain_type_kwargs={"prompt": prompt_template},
-            return_source_documents=True
-        )
-
-        logger.info("✅ Optimized semantic QA Chain ready")
-
-    async def answer_question(self, question: str) -> str:
-        if not self.qa_chain:
-            return "Error: Semantic QA chain not initialized."
-
-        logger.info(f"🤔 Semantic analysis for: {question}")
-
-        try:
-            # Retrieve with semantic understanding
-            result = await asyncio.to_thread(self.qa_chain, {"query": question})
-            raw_answer = result.get("result", "Failed to generate semantic answer.")
-            
-            # Clean up the response formatting
-            clean_answer = self.clean_response(raw_answer)
-            
-            logger.info(f"✅ Semantic answer generated: {len(clean_answer)} characters")
-            return clean_answer
-
-        except Exception as e:
-            logger.error(f"❌ Error during semantic QA: {e}")
-            return "An error occurred while processing the semantic question."
-
-# --- API KEY MANAGER ---
-
-class GroqAPIKeyManager:
-    def __init__(self, api_keys: List[str]):
-        self.api_keys = [key.strip() for key in api_keys if key.strip()]
-        self.key_usage_count = defaultdict(int)
-        self.current_key_index = 0
-        logger.info(f"🔑 API Key Manager: {len(self.api_keys)} keys")
-
-    def get_next_api_key(self):
-        if not self.api_keys:
-            raise ValueError("No API keys available")
-        
-        key = self.api_keys[self.current_key_index % len(self.api_keys)]
-        self.current_key_index += 1
-        return key
-
-# --- CONFIGURATION ---
-
-GROQ_API_KEYS = os.getenv("GROQ_API_KEYS", "").split(',')
-EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
-CHROMA_PERSIST_DIR = "/tmp/chroma_db_storage"
-UPLOAD_DIR = "/tmp/docs"
-
-@app.on_event("startup")
-async def startup_event():
-    try:
-        logger.info("🚀 Initializing optimized semantic services...")
-        
-        app.state.embedding_model = HuggingFaceEmbeddings(
-            model_name=EMBEDDING_MODEL,
+        # Initialize embedding model (cached)
+        self.embedding_model = HuggingFaceEmbeddings(
+            model_name="BAAI/bge-small-en-v1.5",
             model_kwargs={'device': 'cpu'},
             encode_kwargs={'normalize_embeddings': True}
         )
         
-        app.state.api_key_manager = GroqAPIKeyManager(GROQ_API_KEYS)
-        first_key = app.state.api_key_manager.get_next_api_key()
-        app.state.groq_client = groq.Groq(api_key=first_key)
-        app.state.groq_llm = GroqLLM(groq_client=app.state.groq_client, api_key_manager=app.state.api_key_manager)
+        self.vectorstore = Chroma(
+            collection_name=collection_name,
+            embedding_function=self.embedding_model,
+            persist_directory="/tmp/chroma_ultimate"
+        )
         
-        app.state.parsing_service = OptimizedSemanticParser()
+        logger.info(f"🚀 Ultimate RAG Pipeline initialized: {collection_name}")
+    
+    async def add_documents(self, chunks: List[Dict[str, Any]]):
+        """Add documents with advanced filtering"""
+        if not chunks:
+            return
         
-        logger.info("✅ All optimized semantic services initialized!")
+        logger.info(f"📚 Processing {len(chunks)} chunks...")
         
-    except Exception as e:
-        logger.error(f"💥 FATAL ERROR: {e}")
-        raise e
+        # Advanced quality filtering
+        quality_chunks = []
+        for chunk in chunks:
+            content = chunk['content']
+            
+            # Skip error chunks
+            if chunk['metadata'].get('error'):
+                continue
+            
+            # Quality assessment
+            quality_score = 0
+            
+            # Length factor
+            if 100 <= len(content) <= 2000:
+                quality_score += 2
+            elif len(content) > 50:
+                quality_score += 1
+            
+            # Content richness
+            sentences = len(re.split(r'[.!?]+', content))
+            if sentences > 3:
+                quality_score += 1
+            
+            # Numerical data (good for policies)
+            numbers = len(re.findall(r'\d+', content))
+            if numbers > 0:
+                quality_score += 1
+            
+            if quality_score >= 2:
+                quality_chunks.append(chunk)
+        
+        logger.info(f"📚 Filtered to {len(quality_chunks)} quality chunks")
+        
+        # Convert to LangChain documents
+        documents = [
+            LangChainDocument(
+                page_content=chunk['content'],
+                metadata=chunk['metadata']
+            )
+            for chunk in quality_chunks
+        ]
+        
+        # Add to vector store
+        if documents:
+            self.vectorstore.add_documents(documents)
+            logger.info(f"✅ Added {len(documents)} documents to vector store")
+    
+    async def answer_question(self, question: str) -> str:
+        """Answer question with security and quality checks"""
+        # Security check
+        if self.security_guard.detect_jailbreak(question):
+            return self.security_guard.sanitize_response(question, "")
+        
+        try:
+            # Enhanced retrieval
+            retriever = self.vectorstore.as_retriever(
+                search_type="mmr",
+                search_kwargs={
+                    "k": 15,  # More documents
+                    "fetch_k": 30,
+                    "lambda_mult": 0.5
+                }
+            )
+            
+            relevant_docs = retriever.get_relevant_documents(question)
+            
+            if not relevant_docs:
+                return "I don't have enough information in the provided documents to answer this question."
+            
+            # Prepare context
+            context = "\n\n".join([doc.page_content for doc in relevant_docs])
+            
+            # Create enhanced prompt
+            prompt = self._create_enhanced_prompt(context, question)
+            
+            # Get response from multi-LLM system
+            response = await self.llm_manager.get_response(prompt)
+            
+            # Final security check
+            response = self.security_guard.sanitize_response(question, response)
+            
+            # Clean formatting
+            response = self._clean_response(response)
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"❌ Question processing failed: {e}")
+            return "An error occurred while processing your question."
+    
+    def _create_enhanced_prompt(self, context: str, question: str) -> str:
+        """Create enhanced prompt for better responses"""
+        return f"""You are an expert document analyst. Analyze the provided document context to answer the question accurately and professionally.
 
-# --- API MODELS (FIXED FOR HACKATHON) ---
+DOCUMENT CONTEXT:
+{context}
+
+QUESTION: {question}
+
+INSTRUCTIONS:
+- Provide accurate answers based ONLY on the document context
+- Include specific details: numbers, percentages, dates, amounts, conditions
+- Write in clear, professional language without excessive quotes
+- If multiple conditions apply, list them clearly
+- Be precise about limitations, exceptions, and requirements
+- If information is incomplete, state what is available
+- Do not make assumptions beyond what is stated in the documents
+
+ANSWER:"""
+    
+    def _clean_response(self, response: str) -> str:
+        """Clean response formatting"""
+        # Remove excessive quotes
+        response = re.sub(r'"([^"]{1,50})"', r'\1', response)
+        response = re.sub(r'"(\w+)"', r'\1', response)
+        
+        # Fix spacing
+        response = re.sub(r'\s+', ' ', response)
+        response = response.replace(' ,', ',')
+        response = response.replace(' .', '.')
+        
+        # Clean newlines
+        response = re.sub(r'\n\s*\n\s*\n+', '\n\n', response)
+        
+        return response.strip()
+
+# --- AUTHENTICATION ---
+
+async def verify_bearer_token(authorization: str = Header(None)):
+    """Enhanced authentication with better logging"""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header required")
+    
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization format")
+    
+    token = authorization.replace("Bearer ", "")
+    
+    if len(token) < 10:
+        raise HTTPException(status_code=401, detail="Invalid token format")
+    
+    logger.info(f"✅ Authentication successful with token: {token[:10]}...")
+    return token
+
+# --- GLOBAL INSTANCES ---
+
+# Initialize global services
+multi_llm = MultiLLMManager()
+doc_processor = UniversalDocumentProcessor()
+
+# --- API MODELS ---
 
 class SubmissionRequest(BaseModel):
     documents: List[str]
     questions: List[str]
 
-    class Config:
-        schema_extra = {
-            "example": {
-                "documents": ["https://example.com/document1.pdf"],
-                "questions": ["What is the grace period?", "What are the exclusions?"]
-            }
-        }
-
 class SubmissionResponse(BaseModel):
-    answers: List[str]  # ✅ Fixed: Just strings, not objects
+    answers: List[str]
 
-    class Config:
-        schema_extra = {
-            "example": {
-                "answers": [
-                    "The grace period is 30 days for premium payment.",
-                    "The main exclusions include pre-existing diseases for 36 months."
-                ]
-            }
-        }
-
-# --- MAIN ENDPOINT WITH AUTHENTICATION (FIXED FORMAT) ---
+# --- MAIN ENDPOINT ---
 
 @app.post("/hackrx/run", response_model=SubmissionResponse, dependencies=[Depends(verify_bearer_token)])
 async def run_submission(request: Request, submission_request: SubmissionRequest = Body(...)):
+    start_time = time.time()
+    logger.info(f"🎯 ULTIMATE PROCESSING: {len(submission_request.documents)} docs, {len(submission_request.questions)} questions")
+    
     try:
-        logger.info(f"🎯 Processing {len(submission_request.documents)} documents, {len(submission_request.questions)} questions")
+        # Create unique session
+        session_id = f"ultimate_{uuid.uuid4().hex[:8]}"
+        rag_pipeline = UltimateRAGPipeline(session_id, multi_llm)
         
-        parsing_service = request.app.state.parsing_service
-        session_collection_name = f"opt_semantic_{uuid.uuid4().hex[:8]}"
-        rag_pipeline = OptimizedSemanticRAGPipeline(collection_name=session_collection_name, request=request)
-        
+        # Process all documents concurrently
         all_chunks = []
-
-        # Process documents with optimized semantics
-        async with httpx.AsyncClient(timeout=90.0) as client:
-            for doc_idx, doc_url in enumerate(submission_request.documents):
-                try:
-                    logger.info(f"📥 Downloading document {doc_idx + 1}")
-                    response = await client.get(doc_url, follow_redirects=True)
-                    response.raise_for_status()
-
-                    file_name = f"doc_{doc_idx}_{uuid.uuid4().hex[:8]}.pdf"
-                    temp_file_path = os.path.join(UPLOAD_DIR, file_name)
-                    os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-                    with open(temp_file_path, "wb") as f:
-                        f.write(response.content)
-
-                    logger.info(f"📄 Processing with optimized semantics...")
-                    chunks = parsing_service.process_pdf_optimized_semantic(temp_file_path)
-                    chunk_dicts = [chunk.to_dict() for chunk in chunks]
-                    all_chunks.extend(chunk_dicts)
-
-                    os.remove(temp_file_path)
-                    logger.info(f"✅ Processed {len(chunks)} semantic chunks")
-
-                except Exception as e:
-                    logger.error(f"❌ Document processing failed: {e}")
-                    continue
-
-        logger.info(f"📊 Total semantic chunks: {len(all_chunks)}")
-
+        
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            # Create semaphore to limit concurrent downloads
+            semaphore = asyncio.Semaphore(3)
+            
+            async def process_single_document(doc_idx: int, doc_url: str):
+                async with semaphore:
+                    try:
+                        logger.info(f"📥 Downloading document {doc_idx + 1}")
+                        response = await client.get(doc_url, follow_redirects=True)
+                        response.raise_for_status()
+                        
+                        # Get filename from URL or generate one
+                        filename = os.path.basename(doc_url.split('?')[0]) or f"document_{doc_idx}"
+                        
+                        # Process document
+                        chunks = await doc_processor.process_document(filename, response.content)
+                        
+                        logger.info(f"✅ Document {doc_idx + 1}: {len(chunks)} chunks")
+                        return chunks
+                        
+                    except Exception as e:
+                        logger.error(f"❌ Document {doc_idx + 1} failed: {e}")
+                        return []
+            
+            # Process all documents concurrently
+            tasks = [
+                process_single_document(i, url) 
+                for i, url in enumerate(submission_request.documents)
+            ]
+            
+            results = await asyncio.gather(*tasks)
+            
+            # Flatten results
+            for chunks in results:
+                all_chunks.extend(chunks)
+        
+        logger.info(f"📊 Total chunks processed: {len(all_chunks)}")
+        
         if not all_chunks:
-            logger.error("❌ No chunks processed!")
-            # ✅ Fixed: Return just strings
+            logger.error("❌ No valid content extracted!")
             return SubmissionResponse(answers=[
-                "Document processing failed." for _ in submission_request.questions
+                "No valid content could be extracted from the provided documents."
+                for _ in submission_request.questions
             ])
-
-        # Add to semantic RAG pipeline
-        rag_pipeline.add_documents(all_chunks)
-
-        # Answer questions with semantic understanding
-        logger.info(f"❓ Answering questions with optimized semantics...")
-        answers = []  # ✅ Fixed: Just collect string answers
         
-        for question in submission_request.questions:
-            try:
-                answer = await rag_pipeline.answer_question(question)
-                answers.append(answer)  # ✅ Fixed: Just append the string answer
-            except Exception as e:
-                logger.error(f"❌ Question failed: {e}")
-                answers.append("Failed to process question.")  # ✅ Fixed: Just string
+        # Add to RAG pipeline
+        await rag_pipeline.add_documents(all_chunks)
         
-        logger.info("🎉 All semantic questions processed!")
-        return SubmissionResponse(answers=answers)  # ✅ Fixed: Just the string list
+        # Answer all questions concurrently
+        logger.info(f"❓ Answering questions...")
+        
+        # Limit concurrent questions to avoid overwhelming the LLM
+        semaphore = asyncio.Semaphore(2)
+        
+        async def answer_single_question(question: str) -> str:
+            async with semaphore:
+                return await rag_pipeline.answer_question(question)
+        
+        tasks = [answer_single_question(q) for q in submission_request.questions]
+        answers = await asyncio.gather(*tasks)
+        
+        elapsed = time.time() - start_time
+        logger.info(f"🎉 ULTIMATE SUCCESS! Processed in {elapsed:.2f}s")
+        
+        return SubmissionResponse(answers=answers)
         
     except Exception as e:
-        logger.error(f"💥 CRITICAL ERROR: {e}")
-        # ✅ Fixed: Return just strings
+        elapsed = time.time() - start_time
+        logger.error(f"💥 CRITICAL ERROR after {elapsed:.2f}s: {e}")
+        
         return SubmissionResponse(answers=[
-            f"System error: {str(e)}" for _ in submission_request.questions
+            f"Processing error occurred. Please try again."
+            for _ in submission_request.questions
         ])
+
+# --- HEALTH ENDPOINTS ---
 
 @app.get("/")
 def read_root():
-    return {"message": "Optimized Semantic RAG System", "status": "healthy"}
+    return {
+        "message": "🏆 ULTIMATE HACKATHON RAG SYSTEM",
+        "version": "3.0.0",
+        "status": "READY TO WIN!",
+        "supported_formats": list(doc_processor.processors.keys()),
+        "features": [
+            "Multi-format document processing",
+            "Multi-LLM fallback system", 
+            "Anti-jailbreak security",
+            "Smart caching",
+            "Concurrent processing",
+            "Semantic chunking"
+        ]
+    }
 
 @app.get("/health")
 def health_check():
-    return {"status": "healthy", "version": "2.1.0"}
+    return {
+        "status": "healthy",
+        "version": "3.0.0",
+        "cache_size": len(doc_processor.cache),
+        "timestamp": time.time()
+    }
+
+# --- TESTING ENDPOINT ---
+
+@app.post("/test")
+async def test_endpoint(request: dict):
+    """Test endpoint for validation"""
+    return {
+        "status": "success",
+        "message": "Ultimate RAG system is operational",
+        "processed_request": request
+    }
