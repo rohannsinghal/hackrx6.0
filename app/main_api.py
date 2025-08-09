@@ -14,6 +14,8 @@ from collections import defaultdict
 from itertools import cycle
 from pathlib import Path
 import functools
+import threading
+import concurrent.futures
 
 # FastAPI and core dependencies
 from fastapi import FastAPI, Body, HTTPException, Request, Depends, Header
@@ -49,21 +51,25 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Kaggle-Powered Hackathon RAG", version="5.1.0")
+app = FastAPI(title="Kaggle-Powered Hackathon RAG", version="5.2.0")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*", "ngrok-skip-browser-warning"],  # Added ngrok header
 )
 
-# --- KAGGLE MODEL CLIENT (REPLACES ALL LOCAL MODELS) ---
+# --- KAGGLE MODEL CLIENT WITH IMPROVED ERROR HANDLING ---
 class KaggleModelClient:
     def __init__(self, kaggle_endpoint: str):
         self.kaggle_endpoint = kaggle_endpoint.rstrip('/')
-        self.client = httpx.AsyncClient(timeout=30.0)
+        # Added ngrok-skip-browser-warning header
+        self.client = httpx.AsyncClient(
+            timeout=30.0,
+            headers={"ngrok-skip-browser-warning": "true"}
+        )
         logger.info(f"🎯 Kaggle Model Client initialized: {kaggle_endpoint}")
         
     async def health_check(self) -> bool:
@@ -71,7 +77,8 @@ class KaggleModelClient:
         try:
             response = await self.client.get(f"{self.kaggle_endpoint}/health")
             return response.status_code == 200
-        except:
+        except Exception as e:
+            logger.error(f"Kaggle health check failed: {e}")
             return False
     
     async def generate_embeddings(self, texts: List[str]) -> List[List[float]]:
@@ -108,7 +115,7 @@ class KaggleModelClient:
             logger.error(f"Kaggle reranking error: {e}")
             return documents[:k]  # Fallback to original order
 
-# --- LIGHTWEIGHT QUERY PROCESSOR (REPLACING HEAVY SEMANTIC PROCESSOR) ---
+# --- LIGHTWEIGHT QUERY PROCESSOR ---
 class LightweightQueryProcessor:
     def __init__(self, kaggle_client: KaggleModelClient):
         self.kaggle_client = kaggle_client
@@ -170,7 +177,7 @@ class LightweightQueryProcessor:
         
         return query
 
-# --- ANTI-JAILBREAK SECURITY SYSTEM (KEEPING YOUR EXCELLENT SECURITY) ---
+# --- ANTI-JAILBREAK SECURITY SYSTEM ---
 class SecurityGuard:
     def __init__(self):
         self.jailbreak_patterns = [
@@ -206,7 +213,7 @@ class SecurityGuard:
         
         return answer
 
-# --- MULTI-LLM MANAGER (KEEPING YOUR EXCELLENT SETUP) ---
+# --- MULTI-LLM MANAGER ---
 class MultiLLMManager:
     def __init__(self):
         # Initialize multiple LLM providers with fallback
@@ -282,7 +289,7 @@ class MultiLLMManager:
         response = await model.generate_content_async(prompt)
         return response.text.strip()
 
-# --- COMPLETE UNIVERSAL DOCUMENT PROCESSOR (ALL YOUR EXCELLENT FEATURES) ---
+# --- COMPLETE UNIVERSAL DOCUMENT PROCESSOR ---
 class UniversalDocumentProcessor:
     def __init__(self):
         # SPEED OPTIMIZATIONS: Reduced limits
@@ -718,11 +725,9 @@ class AsyncKaggleEmbeddingWrapper:
     
     def _embed_with_thread(self, texts: List[str]) -> List[List[float]]:
         """Helper: Run embedding in separate thread when in async context"""
-        import threading
-        import concurrent.futures
         
         # Use a thread pool to run the async function
-        with concurrent.futures.ThreadPoolExecutor() as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             # Create new event loop in thread
             def run_in_thread():
                 new_loop = asyncio.new_event_loop()
@@ -942,7 +947,7 @@ multi_llm = MultiLLMManager()
 doc_processor = UniversalDocumentProcessor()
 
 # Set your Kaggle ngrok endpoint here
-KAGGLE_ENDPOINT = os.getenv("KAGGLE_ENDPOINT", "https://f946fa884fe6.ngrok-free.app")
+KAGGLE_ENDPOINT = os.getenv("KAGGLE_ENDPOINT", "https://7c040cc03b71.ngrok-free.app")
 kaggle_client = KaggleModelClient(KAGGLE_ENDPOINT)
 
 # --- API MODELS ---
@@ -952,6 +957,21 @@ class SubmissionRequest(BaseModel):
 
 class SubmissionResponse(BaseModel):
     answers: List[str]
+
+# --- FIXED: BOTH GET AND POST ENDPOINTS FOR /hackrx/run ---
+@app.get("/hackrx/run")
+def test_endpoint():
+    """GET endpoint for testing - fixes 405 Method Not Allowed error"""
+    return {
+        "message": "This endpoint requires POST method",
+        "usage": "Send POST request with documents and questions",
+        "status": "API is running",
+        "method": "Use POST with JSON body",
+        "example": {
+            "documents": ["url1", "url2"],
+            "questions": ["question1", "question2"]
+        }
+    }
 
 # --- SPEED-OPTIMIZED MAIN ENDPOINT ---
 @app.post("/hackrx/run", response_model=SubmissionResponse, dependencies=[Depends(verify_bearer_token)])
@@ -974,7 +994,10 @@ async def run_submission(request: Request, submission_request: SubmissionRequest
         # Process all documents with higher concurrency
         all_chunks = []
         
-        async with httpx.AsyncClient(timeout=45.0) as client:  # Tighter timeout
+        async with httpx.AsyncClient(
+            timeout=45.0,
+            headers={"ngrok-skip-browser-warning": "true"}
+        ) as client:  # Tighter timeout + ngrok header
             # SPEED OPTIMIZATION: Higher concurrency
             semaphore = asyncio.Semaphore(5)  # Increased from 3
             
@@ -1054,8 +1077,8 @@ async def run_submission(request: Request, submission_request: SubmissionRequest
 def read_root():
     return {
         "message": "🎯 KAGGLE-POWERED HACKATHON RAG SYSTEM - COMPLETE",
-        "version": "5.1.0",
-        "status": "FIXED: Event loop issue resolved!",
+        "version": "5.2.0",
+        "status": "FIXED: Event loop + ngrok + HTTP method issues resolved!",
         "target_time": "<20 seconds with Kaggle GPU",
         "supported_formats": list(doc_processor.processors.keys()),
         "features": [
@@ -1067,21 +1090,53 @@ def read_root():
             "Optimized caching and concurrent processing",
             "Semantic chunking and context fusion",
             "R4 'half questions' handling",
-            "Lightning-fast GPU-accelerated response times"
+            "Lightning-fast GPU-accelerated response times",
+            "Fixed asyncio event loop issues",
+            "Ngrok compatibility headers"
         ],
-        "kaggle_endpoint": KAGGLE_ENDPOINT
+        "kaggle_endpoint": KAGGLE_ENDPOINT,
+        "fixes": [
+            "AsyncKaggleEmbeddingWrapper with thread isolation",
+            "CORS headers with ngrok-skip-browser-warning",
+            "Both GET and POST endpoints for /hackrx/run",
+            "Improved error handling and logging"
+        ]
     }
 
 @app.get("/health")
 def health_check():
     return {
         "status": "healthy",
-        "version": "5.1.0",
+        "version": "5.2.0",
         "mode": "KAGGLE_GPU_POWERED",
         "cache_size": len(doc_processor.cache),
         "kaggle_endpoint": KAGGLE_ENDPOINT,
-        "timestamp": time.time()
+        "timestamp": time.time(),
+        "fixes_applied": [
+            "asyncio_event_loop_fix",
+            "ngrok_compatibility",
+            "http_method_fix",
+            "cors_headers"
+        ]
     }
+
+@app.get("/test-kaggle")
+async def test_kaggle_connection():
+    """Test endpoint to check Kaggle connection"""
+    try:
+        is_healthy = await kaggle_client.health_check()
+        return {
+            "kaggle_endpoint": KAGGLE_ENDPOINT,
+            "health_status": "healthy" if is_healthy else "unhealthy",
+            "timestamp": time.time()
+        }
+    except Exception as e:
+        return {
+            "kaggle_endpoint": KAGGLE_ENDPOINT,
+            "health_status": "error",
+            "error": str(e),
+            "timestamp": time.time()
+        }
 
 # --- RUN SERVER ---
 if __name__ == "__main__":
