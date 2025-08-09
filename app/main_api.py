@@ -1,4 +1,8 @@
-# --- ULTIMATE HACKATHON WINNING RAG SYSTEM ---
+# -*- coding: utf-8 -*-
+"""
+Ultimate Hackathon Winning RAG System - Multi-format, Multi-LLM, Enhanced Semantic
+Version: 4.0.0 - Competition Ready
+"""
 
 import os
 import json
@@ -7,12 +11,13 @@ import time
 import re
 import asyncio
 import logging
-from typing import List, Dict, Any, Optional, Union
+import hashlib
+import httpx
+from typing import List, Dict, Any, Optional
 from collections import defaultdict
 from itertools import cycle
-import hashlib
-import mimetypes
 from pathlib import Path
+import functools
 
 # FastAPI and core dependencies
 from fastapi import FastAPI, Body, HTTPException, Request, Depends, Header
@@ -24,8 +29,6 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
-from langchain.llms.base import LLM
-from langchain.callbacks.manager import CallbackManagerForLLMRun
 from langchain.schema.document import Document as LangChainDocument
 
 # Multi-format document processing
@@ -35,33 +38,29 @@ import docx  # python-docx
 import openpyxl
 import csv
 import zipfile
-import rarfile
 import email
 from email.policy import default
-import eml_parser
 from bs4 import BeautifulSoup
 import xml.etree.ElementTree as ET
 
-# Multiple LLM providers
+# Semantic enhancements
+from sentence_transformers import SentenceTransformer, CrossEncoder
+import cachetools
+
+# LLM providers
 import groq
 import openai
 import google.generativeai as genai
 
-# Other dependencies
-import httpx
 from dotenv import load_dotenv
-import cachetools
-import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Setup
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Ultimate Hackathon RAG System", version="3.0.0")
+app = FastAPI(title="Ultimate Hackathon Winning RAG System", version="4.0.0")
 
-# Enhanced CORS for all scenarios
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -71,7 +70,6 @@ app.add_middleware(
 )
 
 # --- ANTI-JAILBREAK SECURITY SYSTEM ---
-
 class SecurityGuard:
     def __init__(self):
         self.jailbreak_patterns = [
@@ -90,7 +88,7 @@ class SecurityGuard:
             r'what.*are.*you',
             r'who.*created.*you'
         ]
-        
+    
     def detect_jailbreak(self, text: str) -> bool:
         """Detect jailbreak attempts"""
         text_lower = text.lower()
@@ -107,19 +105,122 @@ class SecurityGuard:
         
         return answer
 
-# --- MULTI-LLM PROVIDER SYSTEM ---
+# --- ENHANCED SEMANTIC PROCESSOR (FREE VERSION) ---
+class AdvancedSemanticProcessor:
+    def __init__(self):
+        # Use FREE models for maximum performance
+        self.reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')  # FREE
+        self.cache = cachetools.TTLCache(maxsize=1000, ttl=3600)  # 1 hour cache
+        
+    async def enhance_query_semantically(self, question: str, domain: str = "insurance") -> str:
+        """Enhanced semantic query processing"""
+        
+        # Cache check
+        cache_key = hashlib.md5(question.encode()).hexdigest()
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+        
+        # Insurance domain expansion
+        enhanced_query = self._expand_with_domain_knowledge(question, domain)
+        
+        # Handle "half questions" (R4 requirement)
+        enhanced_query = self._handle_incomplete_questions(enhanced_query)
+        
+        # Cache result
+        self.cache[cache_key] = enhanced_query
+        return enhanced_query
+    
+    def _expand_with_domain_knowledge(self, query: str, domain: str) -> str:
+        """Expand query with insurance domain knowledge"""
+        insurance_expansions = {
+            'grace period': ['payment deadline', 'premium due date', 'payment window'],
+            'waiting period': ['exclusion time', 'coverage delay', 'qualification period'],
+            'pre-existing': ['prior medical condition', 'existing disease', 'medical history'],
+            'coverage': ['policy benefits', 'insurance protection', 'covered services'],
+            'exclusion': ['policy limitations', 'restrictions', 'non-covered items'],
+            'deductible': ['excess amount', 'out-of-pocket cost'],
+            'premium': ['insurance cost', 'policy payment', 'monthly fee'],
+            'claim': ['insurance claim', 'benefit request', 'reimbursement'],
+            'ayush': ['alternative medicine', 'traditional therapy', 'holistic treatment'],
+            'hospital': ['healthcare facility', 'medical center', 'treatment center']
+        }
+        
+        expanded_terms = []
+        query_lower = query.lower()
+        
+        for key_term, synonyms in insurance_expansions.items():
+            if key_term in query_lower:
+                expanded_terms.extend(synonyms[:2])  # Limit for performance
+        
+        if expanded_terms:
+            enhanced_query = f"{query}. Also consider: {', '.join(expanded_terms[:4])}"
+        else:
+            enhanced_query = query
+            
+        return enhanced_query
+    
+    def _handle_incomplete_questions(self, query: str) -> str:
+        """Handle R4's 'half questions' requirement"""
+        incomplete_patterns = [
+            r'^(what|how|when|where|why)\s*\?*$',
+            r'^(yes|no)\s*\?*$',
+            r'^\w{1,3}\s*\?*$',  # Very short questions
+            r'^(this|that|it)\s*',
+        ]
+        
+        query_lower = query.lower()
+        is_incomplete = any(re.search(pattern, query_lower) for pattern in incomplete_patterns)
+        
+        if is_incomplete:
+            # Add context for common incomplete questions
+            if len(query.split()) <= 2:
+                enhanced_query = f"{query}. Please provide information about insurance policy terms, coverage, exclusions, waiting periods, or benefits."
+            else:
+                enhanced_query = query
+        else:
+            enhanced_query = query
+            
+        return enhanced_query
+    
+    async def semantic_rerank(self, question: str, documents: List, k: int = 8) -> List:
+        """Advanced semantic reranking using CrossEncoder"""
+        if not documents or len(documents) <= k:
+            return documents
+        
+        # Prepare pairs for reranking
+        pairs = [[question, doc.page_content] for doc in documents]
+        
+        # Get relevance scores
+        scores = self.reranker.predict(pairs)
+        
+        # Combine and sort
+        scored_docs = list(zip(scores, documents))
+        scored_docs.sort(key=lambda x: x[0], reverse=True)
+        
+        return [doc for score, doc in scored_docs[:k]]
 
+# --- MULTI-LLM MANAGER (FREE + PAID OPTIONS) ---
 class MultiLLMManager:
     def __init__(self):
-        # Initialize multiple LLM providers
+        # Initialize multiple LLM providers with fallback
+        self.providers = ['groq']  # Start with Groq as primary
+        
         self.groq_keys = cycle([k.strip() for k in os.getenv("GROQ_API_KEYS", "").split(',') if k.strip()])
-        self.openai_keys = cycle([k.strip() for k in os.getenv("OPENAI_API_KEYS", "").split(',') if k.strip()])
-        self.gemini_keys = cycle([k.strip() for k in os.getenv("GEMINI_API_KEYS", "").split(',') if k.strip()])
         
-        self.providers = ['groq', 'openai', 'gemini']
+        # Optional paid providers (if keys available)
+        openai_keys = [k.strip() for k in os.getenv("OPENAI_API_KEYS", "").split(',') if k.strip()]
+        gemini_keys = [k.strip() for k in os.getenv("GEMINI_API_KEYS", "").split(',') if k.strip()]
+        
+        if openai_keys:
+            self.providers.append('openai')
+            self.openai_keys = cycle(openai_keys)
+            
+        if gemini_keys:
+            self.providers.append('gemini') 
+            self.gemini_keys = cycle(gemini_keys)
+        
         self.current_provider_index = 0
-        
-        logger.info("🔑 Multi-LLM Manager initialized with fallback support")
+        logger.info(f"🔑 Multi-LLM Manager initialized with {len(self.providers)} providers")
     
     async def get_response(self, prompt: str, max_tokens: int = 900) -> str:
         """Get response with automatic fallback between providers"""
@@ -175,17 +276,15 @@ class MultiLLMManager:
         return response.text.strip()
 
 # --- UNIVERSAL DOCUMENT PROCESSOR ---
-
 class UniversalDocumentProcessor:
     def __init__(self):
         self.chunk_size = 1200
         self.chunk_overlap = 200
         self.max_chunks = 250
-        self.max_pages = 30
+        self.max_pages = 25
         
         # Smart caching system
-        self.cache = cachetools.TTLCache(maxsize=100, ttl=3600)  # 1 hour TTL
-        self.security_guard = SecurityGuard()
+        self.cache = cachetools.TTLCache(maxsize=100, ttl=3600)
         
         # Supported formats
         self.processors = {
@@ -200,7 +299,6 @@ class UniversalDocumentProcessor:
             '.xml': self.process_xml,
             '.eml': self.process_email,
             '.zip': self.process_archive,
-            '.rar': self.process_archive,
             '.json': self.process_json
         }
         
@@ -253,34 +351,23 @@ class UniversalDocumentProcessor:
         else:
             return '.txt'
     
-    # --- PDF PROCESSING (Enhanced) ---
+    # --- PDF PROCESSING ---
     async def process_pdf(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
-        """Enhanced PDF processing with tables and images"""
+        """Enhanced PDF processing"""
         chunks = []
+        temp_path = f"/tmp/{uuid.uuid4().hex}.pdf"
         
-        with open(file_path, 'wb') as f:
+        with open(temp_path, 'wb') as f:
             f.write(content)
         
         try:
             # Extract text with PyMuPDF
-            doc = fitz.open(file_path)
+            doc = fitz.open(temp_path)
             full_text = ""
             
             for page_num in range(min(len(doc), self.max_pages)):
                 page = doc[page_num]
-                
-                # Extract text
                 text = page.get_text()
-                
-                # Extract images as context (if they contain text)
-                image_list = page.get_images()
-                for img in image_list[:3]:  # Limit images
-                    try:
-                        xref = img[0]
-                        base_image = doc.extract_image(xref)
-                        # Could add OCR here if needed
-                    except:
-                        pass
                 
                 if text.strip():
                     full_text += f"\n\nPage {page_num + 1}:\n{self._clean_text(text)}"
@@ -288,7 +375,7 @@ class UniversalDocumentProcessor:
             doc.close()
             
             # Extract tables with pdfplumber
-            table_text = await self._extract_pdf_tables(file_path)
+            table_text = await self._extract_pdf_tables(temp_path)
             if table_text:
                 full_text += f"\n\n=== TABLES ===\n{table_text}"
             
@@ -300,8 +387,8 @@ class UniversalDocumentProcessor:
             chunks = self._emergency_text_extraction(content, file_path)
         
         finally:
-            if os.path.exists(file_path):
-                os.remove(file_path)
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
         
         return chunks
     
@@ -310,16 +397,16 @@ class UniversalDocumentProcessor:
         table_text = ""
         try:
             with pdfplumber.open(file_path) as pdf:
-                for page_num, page in enumerate(pdf.pages[:15]):
+                for page_num, page in enumerate(pdf.pages[:12]):
                     tables = page.find_tables()
-                    for i, table in enumerate(tables[:3]):
+                    for i, table in enumerate(tables[:2]):
                         try:
                             table_data = table.extract()
                             if table_data and len(table_data) > 1:
                                 table_md = f"\n**Table {i+1} (Page {page_num+1})**\n"
-                                for row in table_data[:20]:
+                                for row in table_data[:15]:
                                     if row:
-                                        clean_row = [str(cell or "").strip()[:50] for cell in row]
+                                        clean_row = [str(cell or "").strip()[:40] for cell in row]
                                         table_md += "| " + " | ".join(clean_row) + " |\n"
                                 table_text += table_md + "\n"
                         except:
@@ -329,14 +416,15 @@ class UniversalDocumentProcessor:
         
         return table_text
     
-    # --- DOCX/DOC PROCESSING ---
+    # --- OTHER FORMAT PROCESSORS ---
     async def process_docx(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
         """Process DOCX files"""
-        with open(file_path, 'wb') as f:
+        temp_path = f"/tmp/{uuid.uuid4().hex}.docx"
+        with open(temp_path, 'wb') as f:
             f.write(content)
         
         try:
-            doc = docx.Document(file_path)
+            doc = docx.Document(temp_path)
             full_text = ""
             
             # Extract paragraphs
@@ -361,8 +449,8 @@ class UniversalDocumentProcessor:
             chunks = self._emergency_text_extraction(content, file_path)
         
         finally:
-            if os.path.exists(file_path):
-                os.remove(file_path)
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
         
         return chunks
     
@@ -370,32 +458,24 @@ class UniversalDocumentProcessor:
         """Process DOC files (fallback to text extraction)"""
         return self._emergency_text_extraction(content, file_path)
     
-    # --- EXCEL PROCESSING ---
     async def process_excel(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
         """Process Excel files"""
-        with open(file_path, 'wb') as f:
+        temp_path = f"/tmp/{uuid.uuid4().hex}.xlsx"
+        with open(temp_path, 'wb') as f:
             f.write(content)
         
         try:
-            workbook = openpyxl.load_workbook(file_path, read_only=True)
+            workbook = openpyxl.load_workbook(temp_path, read_only=True)
             full_text = ""
             
-            for sheet_name in workbook.sheetnames[:5]:  # Max 5 sheets
+            for sheet_name in workbook.sheetnames[:3]:
                 sheet = workbook[sheet_name]
                 full_text += f"\n**Sheet: {sheet_name}**\n"
                 
-                # Get data as table
-                data = []
-                for row in sheet.iter_rows(max_row=min(sheet.max_row, 100), values_only=True):
-                    if any(cell for cell in row):  # Skip empty rows
-                        data.append([str(cell or "").strip() for cell in row])
-                
-                if data:
-                    # Format as table
-                    for row in data:
-                        full_text += "| " + " | ".join(row[:10]) + " |\n"  # Max 10 columns
-                
-                full_text += "\n"
+                for row_num, row in enumerate(sheet.iter_rows(max_row=50, values_only=True)):
+                    if row_num == 0 or any(cell for cell in row):
+                        row_text = [str(cell or "").strip()[:30] for cell in row[:8]]
+                        full_text += "| " + " | ".join(row_text) + " |\n"
             
             workbook.close()
             chunks = self._create_semantic_chunks(full_text, file_path, "excel")
@@ -405,47 +485,69 @@ class UniversalDocumentProcessor:
             chunks = self._emergency_text_extraction(content, file_path)
         
         finally:
-            if os.path.exists(file_path):
-                os.remove(file_path)
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
         
         return chunks
     
-    # --- CSV PROCESSING ---
+    # --- Other format processors (simplified for brevity) ---
     async def process_csv(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
-        """Process CSV files"""
         try:
             text_content = content.decode('utf-8', errors='ignore')
             lines = text_content.split('\n')
             
             full_text = "**CSV DATA**\n"
-            for i, line in enumerate(lines[:200]):  # Max 200 rows
+            for i, line in enumerate(lines[:100]):
                 if line.strip():
-                    # Parse CSV row
-                    row_data = next(csv.reader([line]))
-                    full_text += "| " + " | ".join(str(cell).strip()[:50] for cell in row_data) + " |\n"
+                    full_text += f"| {line} |\n"
             
-            chunks = self._create_semantic_chunks(full_text, file_path, "csv")
-            
+            return self._create_semantic_chunks(full_text, file_path, "csv")
         except Exception as e:
             logger.error(f"CSV processing error: {e}")
-            chunks = self._emergency_text_extraction(content, file_path)
-        
-        return chunks
+            return []
     
-    # --- EMAIL PROCESSING ---
-    async def process_email(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
-        """Process email files"""
+    async def process_text(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
         try:
-            # Parse email
+            text = content.decode('utf-8', errors='ignore')
+            return self._create_semantic_chunks(text, file_path, "text")
+        except Exception as e:
+            logger.error(f"Text processing error: {e}")
+            return []
+    
+    async def process_html(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
+        try:
+            soup = BeautifulSoup(content, 'html.parser')
+            for script in soup(["script", "style"]):
+                script.decompose()
+            text = soup.get_text()
+            return self._create_semantic_chunks(text, file_path, "html")
+        except Exception as e:
+            logger.error(f"HTML processing error: {e}")
+            return []
+    
+    async def process_xml(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
+        try:
+            root = ET.fromstring(content)
+            def extract_text(element, level=0):
+                text = ""
+                if element.text and element.text.strip():
+                    text += f"{'  ' * level}{element.tag}: {element.text.strip()}\n"
+                for child in element:
+                    text += extract_text(child, level + 1)
+                return text
+            full_text = extract_text(root)
+            return self._create_semantic_chunks(full_text, file_path, "xml")
+        except Exception as e:
+            logger.error(f"XML processing error: {e}")
+            return []
+    
+    async def process_email(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
+        try:
             msg = email.message_from_bytes(content, policy=default)
-            
             full_text = f"**EMAIL**\n"
             full_text += f"From: {msg.get('From', 'Unknown')}\n"
-            full_text += f"To: {msg.get('To', 'Unknown')}\n"
-            full_text += f"Subject: {msg.get('Subject', 'No Subject')}\n"
-            full_text += f"Date: {msg.get('Date', 'Unknown')}\n\n"
+            full_text += f"Subject: {msg.get('Subject', 'No Subject')}\n\n"
             
-            # Extract body
             if msg.is_multipart():
                 for part in msg.walk():
                     if part.get_content_type() == "text/plain":
@@ -455,111 +557,44 @@ class UniversalDocumentProcessor:
                 body = msg.get_content()
                 full_text += f"Content:\n{body}\n"
             
-            chunks = self._create_semantic_chunks(full_text, file_path, "email")
-            
+            return self._create_semantic_chunks(full_text, file_path, "email")
         except Exception as e:
             logger.error(f"Email processing error: {e}")
-            chunks = self._emergency_text_extraction(content, file_path)
-        
-        return chunks
+            return []
     
-    # --- HTML/XML PROCESSING ---
-    async def process_html(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
-        """Process HTML files"""
-        try:
-            soup = BeautifulSoup(content, 'html.parser')
-            
-            # Remove script and style tags
-            for script in soup(["script", "style"]):
-                script.decompose()
-            
-            # Extract text
-            text = soup.get_text()
-            
-            chunks = self._create_semantic_chunks(text, file_path, "html")
-            
-        except Exception as e:
-            logger.error(f"HTML processing error: {e}")
-            chunks = self._emergency_text_extraction(content, file_path)
-        
-        return chunks
-    
-    async def process_xml(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
-        """Process XML files"""
-        try:
-            root = ET.fromstring(content)
-            
-            def extract_text(element, level=0):
-                text = ""
-                if element.text and element.text.strip():
-                    text += f"{'  ' * level}{element.tag}: {element.text.strip()}\n"
-                for child in element:
-                    text += extract_text(child, level + 1)
-                return text
-            
-            full_text = extract_text(root)
-            chunks = self._create_semantic_chunks(full_text, file_path, "xml")
-            
-        except Exception as e:
-            logger.error(f"XML processing error: {e}")
-            chunks = self._emergency_text_extraction(content, file_path)
-        
-        return chunks
-    
-    # --- ARCHIVE PROCESSING ---
     async def process_archive(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
-        """Process ZIP/RAR archives"""
-        with open(file_path, 'wb') as f:
+        temp_path = f"/tmp/{uuid.uuid4().hex}.zip"
+        with open(temp_path, 'wb') as f:
             f.write(content)
         
         chunks = []
         try:
             if file_path.endswith('.zip'):
-                with zipfile.ZipFile(file_path, 'r') as zip_file:
-                    for file_info in zip_file.filelist[:10]:  # Max 10 files
+                with zipfile.ZipFile(temp_path, 'r') as zip_file:
+                    for file_info in zip_file.filelist[:5]:
                         try:
                             file_content = zip_file.read(file_info)
                             sub_chunks = await self.process_document(file_info.filename, file_content)
-                            chunks.extend(sub_chunks)
+                            chunks.extend(sub_chunks[:20])  # Limit sub-chunks
                         except:
                             continue
-            
-            # Could add RAR support here if needed
-            
         except Exception as e:
             logger.error(f"Archive processing error: {e}")
-            chunks = self._emergency_text_extraction(content, file_path)
         
         finally:
-            if os.path.exists(file_path):
-                os.remove(file_path)
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
         
         return chunks
     
-    # --- JSON PROCESSING ---
     async def process_json(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
-        """Process JSON files"""
         try:
             data = json.loads(content.decode('utf-8'))
             full_text = json.dumps(data, indent=2, ensure_ascii=False)
-            chunks = self._create_semantic_chunks(full_text, file_path, "json")
+            return self._create_semantic_chunks(full_text, file_path, "json")
         except Exception as e:
             logger.error(f"JSON processing error: {e}")
-            chunks = self._emergency_text_extraction(content, file_path)
-        
-        return chunks
-    
-    # --- TEXT PROCESSING ---
-    async def process_text(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
-        """Process plain text files"""
-        try:
-            text = content.decode('utf-8', errors='ignore')
-            chunks = self._create_semantic_chunks(text, file_path, "text")
-        except Exception as e:
-            logger.error(f"Text processing error: {e}")
-            chunks = []
-        
-        return chunks
+            return []
     
     # --- UTILITY METHODS ---
     def _clean_text(self, text: str) -> str:
@@ -568,9 +603,9 @@ class UniversalDocumentProcessor:
         text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
         text = re.sub(r'\s+', ' ', text)
         
-        # Remove noise
+        # Remove noise patterns
         noise_patterns = [
-            r'Office of the Insurance Ombudsman.*?\n',
+            r'Office of.*Insurance Ombudsman.*?\n',
             r'Lalit Bhawan.*?\n',
             r'^\d+\s*$'
         ]
@@ -587,67 +622,11 @@ class UniversalDocumentProcessor:
         if not text or len(text) < 50:
             return []
         
-        # Semantic boundary detection
-        boundaries = [0]
-        
-        # Look for section markers
-        section_patterns = [
-            r'\n\s*(?:\d+\.)+\s*[A-Z]',
-            r'\n\s*[A-Z][A-Z\s]{8,}:',
-            r'\n\s*(?:TABLE|SECTION|PART)',
-            r'\n\s*\*\*[^*]+\*\*'
-        ]
-        
-        for pattern in section_patterns:
-            for match in re.finditer(pattern, text):
-                boundaries.append(match.start())
-        
-        boundaries.append(len(text))
-        boundaries = sorted(set(boundaries))
-        
-        chunks = []
-        for i in range(len(boundaries) - 1):
-            start = boundaries[i]
-            end = boundaries[i + 1]
-            chunk_text = text[start:end].strip()
-            
-            if len(chunk_text) > self.chunk_size:
-                # Split large chunks
-                sub_chunks = self._split_large_chunk(chunk_text)
-                for j, sub_chunk in enumerate(sub_chunks):
-                    chunks.append({
-                        "content": sub_chunk,
-                        "metadata": {
-                            "source": os.path.basename(source),
-                            "chunk_index": len(chunks),
-                            "document_type": doc_type,
-                            "chunk_length": len(sub_chunk),
-                            "is_sub_chunk": True,
-                            "parent_chunk": i
-                        },
-                        "chunk_id": str(uuid.uuid4())
-                    })
-            elif len(chunk_text) > 100:
-                chunks.append({
-                    "content": chunk_text,
-                    "metadata": {
-                        "source": os.path.basename(source),
-                        "chunk_index": len(chunks),
-                        "document_type": doc_type,
-                        "chunk_length": len(chunk_text),
-                        "is_sub_chunk": False
-                    },
-                    "chunk_id": str(uuid.uuid4())
-                })
-        
-        return chunks[:self.max_chunks]
-    
-    def _split_large_chunk(self, text: str) -> List[str]:
-        """Split large chunks intelligently"""
-        chunks = []
+        # Smart sentence-based chunking
         sentences = re.split(r'(?<=[.!?])\s+', text)
-        
+        chunks = []
         current_chunk = ""
+        
         for sentence in sentences:
             if len(current_chunk) + len(sentence) <= self.chunk_size:
                 current_chunk += sentence + " "
@@ -659,15 +638,28 @@ class UniversalDocumentProcessor:
         if current_chunk.strip():
             chunks.append(current_chunk.strip())
         
-        return chunks
+        # Convert to structured chunks
+        structured_chunks = []
+        for i, chunk_text in enumerate(chunks[:self.max_chunks]):
+            structured_chunks.append({
+                "content": chunk_text,
+                "metadata": {
+                    "source": os.path.basename(source),
+                    "chunk_index": i,
+                    "document_type": doc_type,
+                    "chunk_length": len(chunk_text)
+                },
+                "chunk_id": str(uuid.uuid4())
+            })
+        
+        return structured_chunks
     
     def _emergency_text_extraction(self, content: bytes, file_path: str) -> List[Dict[str, Any]]:
         """Emergency text extraction for unsupported formats"""
         try:
             text = content.decode('utf-8', errors='ignore')
             if len(text) > 50:
-                chunks = self._create_semantic_chunks(text, file_path, "unknown")
-                return chunks
+                return self._create_semantic_chunks(text, file_path, "unknown")
         except:
             pass
         
@@ -682,15 +674,15 @@ class UniversalDocumentProcessor:
             "chunk_id": str(uuid.uuid4())
         }]
 
-# --- ENHANCED RAG PIPELINE ---
-
+# --- ULTIMATE RAG PIPELINE WITH SEMANTIC ENHANCEMENTS ---
 class UltimateRAGPipeline:
     def __init__(self, collection_name: str, llm_manager: MultiLLMManager):
         self.collection_name = collection_name
         self.llm_manager = llm_manager
         self.security_guard = SecurityGuard()
+        self.semantic_processor = AdvancedSemanticProcessor()
         
-        # Initialize embedding model (cached)
+        # Initialize embedding model
         self.embedding_model = HuggingFaceEmbeddings(
             model_name="BAAI/bge-small-en-v1.5",
             model_kwargs={'device': 'cpu'},
@@ -706,7 +698,7 @@ class UltimateRAGPipeline:
         logger.info(f"🚀 Ultimate RAG Pipeline initialized: {collection_name}")
     
     async def add_documents(self, chunks: List[Dict[str, Any]]):
-        """Add documents with advanced filtering"""
+        """Add documents with advanced filtering and processing"""
         if not chunks:
             return
         
@@ -751,7 +743,7 @@ class UltimateRAGPipeline:
                 page_content=chunk['content'],
                 metadata=chunk['metadata']
             )
-            for chunk in quality_chunks
+            for chunk in quality_chunks[:150]  # Limit for performance
         ]
         
         # Add to vector store
@@ -760,40 +752,44 @@ class UltimateRAGPipeline:
             logger.info(f"✅ Added {len(documents)} documents to vector store")
     
     async def answer_question(self, question: str) -> str:
-        """Answer question with security and quality checks"""
+        """Answer question with advanced semantic processing"""
         # Security check
         if self.security_guard.detect_jailbreak(question):
             return self.security_guard.sanitize_response(question, "")
         
         try:
-            # Enhanced retrieval
+            # Enhanced query processing
+            enhanced_question = await self.semantic_processor.enhance_query_semantically(question)
+            
+            # Initial retrieval (get more candidates)
             retriever = self.vectorstore.as_retriever(
                 search_type="mmr",
                 search_kwargs={
-                    "k": 15,  # More documents
-                    "fetch_k": 30,
+                    "k": 20,  # Get more candidates for reranking
+                    "fetch_k": 40,
                     "lambda_mult": 0.5
                 }
             )
             
-            relevant_docs = retriever.get_relevant_documents(question)
+            relevant_docs = retriever.get_relevant_documents(enhanced_question)
             
             if not relevant_docs:
-                return "I don't have enough information in the provided documents to answer this question."
+                return "I don't have sufficient information to answer this question based on the provided documents."
             
-            # Prepare context
-            context = "\n\n".join([doc.page_content for doc in relevant_docs])
+            # Semantic reranking (GAME CHANGER)
+            top_docs = await self.semantic_processor.semantic_rerank(enhanced_question, relevant_docs, k=8)
             
-            # Create enhanced prompt
-            prompt = self._create_enhanced_prompt(context, question)
+            # Prepare enhanced context
+            context = "\n\n".join([doc.page_content for doc in top_docs])
+            
+            # Create advanced semantic prompt
+            prompt = self._create_advanced_prompt(context, question)
             
             # Get response from multi-LLM system
             response = await self.llm_manager.get_response(prompt)
             
-            # Final security check
+            # Final security check and cleaning
             response = self.security_guard.sanitize_response(question, response)
-            
-            # Clean formatting
             response = self._clean_response(response)
             
             return response
@@ -802,44 +798,60 @@ class UltimateRAGPipeline:
             logger.error(f"❌ Question processing failed: {e}")
             return "An error occurred while processing your question."
     
-    def _create_enhanced_prompt(self, context: str, question: str) -> str:
-        """Create enhanced prompt for better responses"""
-        return f"""You are an expert document analyst. Analyze the provided document context to answer the question accurately and professionally.
+    def _create_advanced_prompt(self, context: str, question: str) -> str:
+        """Create advanced semantic-aware prompt"""
+        return f"""You are an expert insurance policy analyst with advanced semantic understanding.
+
+CONTEXT ANALYSIS FRAMEWORK:
+- Apply deep semantic understanding to connect related concepts across documents
+- Recognize implicit relationships and cross-references within policy content
+- Understand hierarchical information structures and conditional dependencies
+- Synthesize information from multiple sources with semantic coherence
 
 DOCUMENT CONTEXT:
 {context}
 
 QUESTION: {question}
 
-INSTRUCTIONS:
-- Provide accurate answers based ONLY on the document context
-- Include specific details: numbers, percentages, dates, amounts, conditions
+ADVANCED REASONING APPROACH:
+1. SEMANTIC COMPREHENSION: Understand the full meaning and intent behind the question
+2. CONTEXTUAL MAPPING: Map question elements to semantically relevant sections
+3. RELATIONSHIP INFERENCE: Identify implicit connections between policy components
+4. MULTI-SOURCE SYNTHESIS: Combine information while maintaining semantic consistency
+5. CONDITIONAL REASONING: Apply logical reasoning to policy exceptions and conditions
+
+RESPONSE REQUIREMENTS:
+- Provide semantically rich, contextually grounded answers
+- Include specific details: numbers, percentages, timeframes, conditions
 - Write in clear, professional language without excessive quotes
-- If multiple conditions apply, list them clearly
-- Be precise about limitations, exceptions, and requirements
-- If information is incomplete, state what is available
-- Do not make assumptions beyond what is stated in the documents
+- Address both explicit information and reasonable semantic inferences
+- Structure information hierarchically when appropriate
 
 ANSWER:"""
     
     def _clean_response(self, response: str) -> str:
-        """Clean response formatting"""
+        """Enhanced response cleaning"""
         # Remove excessive quotes
         response = re.sub(r'"([^"]{1,50})"', r'\1', response)
         response = re.sub(r'"(\w+)"', r'\1', response)
+        response = re.sub(r'"(Rs\.?\s*[\d,]+[/-]*)"', r'\1', response)
+        response = re.sub(r'"(\d+%)"', r'\1', response)
+        response = re.sub(r'"(\d+\s*(?:days?|months?|years?))"', r'\1', response)
         
-        # Fix spacing
+        # Clean policy references
+        response = re.sub(r'[Aa]s stated in the policy[:\s]*"([^"]+)"', r'As per the policy, \1', response)
+        response = re.sub(r'[Aa]ccording to the policy[:\s]*"([^"]+)"', r'According to the policy, \1', response)
+        response = re.sub(r'[Tt]he policy states[:\s]*"([^"]+)"', r'The policy states that \1', response)
+        
+        # Fix spacing and formatting
         response = re.sub(r'\s+', ' ', response)
         response = response.replace(' ,', ',')
         response = response.replace(' .', '.')
-        
-        # Clean newlines
         response = re.sub(r'\n\s*\n\s*\n+', '\n\n', response)
         
         return response.strip()
 
 # --- AUTHENTICATION ---
-
 async def verify_bearer_token(authorization: str = Header(None)):
     """Enhanced authentication with better logging"""
     if not authorization:
@@ -857,13 +869,10 @@ async def verify_bearer_token(authorization: str = Header(None)):
     return token
 
 # --- GLOBAL INSTANCES ---
-
-# Initialize global services
 multi_llm = MultiLLMManager()
 doc_processor = UniversalDocumentProcessor()
 
 # --- API MODELS ---
-
 class SubmissionRequest(BaseModel):
     documents: List[str]
     questions: List[str]
@@ -871,8 +880,7 @@ class SubmissionRequest(BaseModel):
 class SubmissionResponse(BaseModel):
     answers: List[str]
 
-# --- MAIN ENDPOINT ---
-
+# --- MAIN HACKATHON ENDPOINT ---
 @app.post("/hackrx/run", response_model=SubmissionResponse, dependencies=[Depends(verify_bearer_token)])
 async def run_submission(request: Request, submission_request: SubmissionRequest = Body(...)):
     start_time = time.time()
@@ -883,7 +891,7 @@ async def run_submission(request: Request, submission_request: SubmissionRequest
         session_id = f"ultimate_{uuid.uuid4().hex[:8]}"
         rag_pipeline = UltimateRAGPipeline(session_id, multi_llm)
         
-        # Process all documents concurrently
+        # Process all documents concurrently with optimized performance
         all_chunks = []
         
         async with httpx.AsyncClient(timeout=60.0) as client:
@@ -900,7 +908,7 @@ async def run_submission(request: Request, submission_request: SubmissionRequest
                         # Get filename from URL or generate one
                         filename = os.path.basename(doc_url.split('?')[0]) or f"document_{doc_idx}"
                         
-                        # Process document
+                        # Process document with caching
                         chunks = await doc_processor.process_document(filename, response.content)
                         
                         logger.info(f"✅ Document {doc_idx + 1}: {len(chunks)} chunks")
@@ -931,13 +939,13 @@ async def run_submission(request: Request, submission_request: SubmissionRequest
                 for _ in submission_request.questions
             ])
         
-        # Add to RAG pipeline
+        # Add to RAG pipeline with advanced processing
         await rag_pipeline.add_documents(all_chunks)
         
-        # Answer all questions concurrently
-        logger.info(f"❓ Answering questions...")
+        # Answer all questions with semantic intelligence
+        logger.info(f"❓ Answering questions with semantic processing...")
         
-        # Limit concurrent questions to avoid overwhelming the LLM
+        # Limit concurrent questions for stability
         semaphore = asyncio.Semaphore(2)
         
         async def answer_single_question(question: str) -> str:
@@ -957,26 +965,28 @@ async def run_submission(request: Request, submission_request: SubmissionRequest
         logger.error(f"💥 CRITICAL ERROR after {elapsed:.2f}s: {e}")
         
         return SubmissionResponse(answers=[
-            f"Processing error occurred. Please try again."
+            "Processing error occurred. Please try again."
             for _ in submission_request.questions
         ])
 
 # --- HEALTH ENDPOINTS ---
-
 @app.get("/")
 def read_root():
     return {
-        "message": "🏆 ULTIMATE HACKATHON RAG SYSTEM",
-        "version": "3.0.0",
-        "status": "READY TO WIN!",
+        "message": "🏆 ULTIMATE HACKATHON WINNING RAG SYSTEM",
+        "version": "4.0.0",
+        "status": "READY TO DOMINATE!",
         "supported_formats": list(doc_processor.processors.keys()),
         "features": [
-            "Multi-format document processing",
-            "Multi-LLM fallback system", 
-            "Anti-jailbreak security",
-            "Smart caching",
-            "Concurrent processing",
-            "Semantic chunking"
+            "Multi-format document processing (PDF, DOCX, Excel, CSV, HTML, etc.)",
+            "Multi-LLM fallback system (Groq, OpenAI, Gemini)",
+            "Advanced semantic query enhancement",
+            "CrossEncoder reranking for accuracy",
+            "Anti-jailbreak security system",
+            "Smart caching and concurrent processing",
+            "Semantic chunking and context fusion",
+            "R4 'half questions' handling",
+            "Lightning-fast response times"
         ]
     }
 
@@ -984,18 +994,12 @@ def read_root():
 def health_check():
     return {
         "status": "healthy",
-        "version": "3.0.0",
+        "version": "4.0.0",
         "cache_size": len(doc_processor.cache),
         "timestamp": time.time()
     }
 
-# --- TESTING ENDPOINT ---
-
-@app.post("/test")
-async def test_endpoint(request: dict):
-    """Test endpoint for validation"""
-    return {
-        "status": "success",
-        "message": "Ultimate RAG system is operational",
-        "processed_request": request
-    }
+# --- RUN SERVER ---
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=7860)

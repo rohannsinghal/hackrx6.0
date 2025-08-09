@@ -52,3 +52,4 @@ openai
 python-docx
 google-generativeai
 openpyxl 
+rarfile
