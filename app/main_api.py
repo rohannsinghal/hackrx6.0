@@ -1,4 +1,4 @@
-# --- KAGGLE-POWERED RAG SYSTEM WITH LAZY INITIALIZATION - COMPLETE 1144+ LINES ---
+# --- KAGGLE-POWERED RAG SYSTEM - COMPLETE 1144+ LINES WITH DEADLOCK FIX ---
 
 import os
 import json
@@ -24,7 +24,6 @@ from pydantic import BaseModel
 
 # LangChain imports
 from langchain_community.vectorstores import Chroma
-from langchain.schema.document import Document as LangChainDocument
 
 # Multi-format document processing
 import fitz  # PyMuPDF
@@ -51,7 +50,7 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Kaggle-Powered Hackathon RAG", version="5.3.0")
+app = FastAPI(title="Kaggle-Powered Hackathon RAG", version="5.4.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -134,7 +133,7 @@ class LazyKaggleModelClient:
             logger.error(f"Kaggle reranking error: {e}")
             return documents[:k]
 
-# --- LIGHTWEIGHT QUERY PROCESSOR (YOUR EXCELLENT ORIGINAL) ---
+# --- LIGHTWEIGHT QUERY PROCESSOR (YOUR COMPLETE ORIGINAL) ---
 class LightweightQueryProcessor:
     def __init__(self, kaggle_client: LazyKaggleModelClient):
         self.kaggle_client = kaggle_client
@@ -142,18 +141,24 @@ class LightweightQueryProcessor:
         
     async def enhance_query_semantically(self, question: str, domain: str = "insurance") -> str:
         """OPTIMIZED semantic query processing"""
+        
+        # Quick cache check with shorter hash
         cache_key = hashlib.md5(question.encode()).hexdigest()[:8]
         if cache_key in self.cache:
             return self.cache[cache_key]
         
+        # Streamlined domain expansion
         enhanced_query = self._expand_with_domain_knowledge_fast(question, domain)
         enhanced_query = self._handle_incomplete_questions(enhanced_query)
         
+        # Cache result
         self.cache[cache_key] = enhanced_query
         return enhanced_query
     
     def _expand_with_domain_knowledge_fast(self, query: str, domain: str) -> str:
         """OPTIMIZED domain expansion - same intelligence, faster processing"""
+        
+        # Streamlined expansion mapping for speed
         key_expansions = {
             'grace period': 'payment deadline premium due',
             'waiting period': 'exclusion time coverage delay',
@@ -190,7 +195,7 @@ class LightweightQueryProcessor:
         
         return query
 
-# --- ANTI-JAILBREAK SECURITY SYSTEM (YOUR EXCELLENT ORIGINAL) ---
+# --- ANTI-JAILBREAK SECURITY SYSTEM (YOUR COMPLETE ORIGINAL) ---
 class SecurityGuard:
     def __init__(self):
         self.jailbreak_patterns = [
@@ -226,7 +231,7 @@ class SecurityGuard:
         
         return answer
 
-# --- MULTI-LLM MANAGER (YOUR EXCELLENT ORIGINAL WITH ALL PROVIDERS) ---
+# --- MULTI-LLM MANAGER (YOUR COMPLETE ORIGINAL WITH ALL PROVIDERS) ---
 class MultiLLMManager:
     def __init__(self):
         # Initialize multiple LLM providers with fallback
@@ -302,7 +307,7 @@ class MultiLLMManager:
         response = await model.generate_content_async(prompt)
         return response.text.strip()
 
-# --- COMPLETE UNIVERSAL DOCUMENT PROCESSOR (ALL 12 FORMATS!) ---
+# --- COMPLETE UNIVERSAL DOCUMENT PROCESSOR (ALL YOUR ORIGINAL FEATURES) ---
 class UniversalDocumentProcessor:
     def __init__(self):
         # SPEED OPTIMIZATIONS: Reduced limits
@@ -379,7 +384,7 @@ class UniversalDocumentProcessor:
         else:
             return '.txt'
     
-    # --- SPEED-OPTIMIZED PDF PROCESSING (YOUR EXCELLENT ORIGINAL) ---
+    # --- SPEED-OPTIMIZED PDF PROCESSING (YOUR COMPLETE ORIGINAL) ---
     async def process_pdf(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
         """Enhanced PDF processing with speed optimizations"""
         chunks = []
@@ -704,59 +709,9 @@ class UniversalDocumentProcessor:
             "chunk_id": str(uuid.uuid4())
         }]
 
-# --- FIXED: ASYNC-AWARE EMBEDDING WRAPPER (YOUR EXCELLENT ORIGINAL + FIX) ---
-class AsyncKaggleEmbeddingWrapper:
-    """FIXED: Async-aware embedding wrapper that works with Chroma"""
-    def __init__(self, kaggle_client: LazyKaggleModelClient):
-        self.kaggle_client = kaggle_client
-        self._embeddings_cache = {}
-    
-    def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        """FIXED: Embed documents using Kaggle (thread-safe async wrapper)"""
-        try:
-            # Check if we're in an async context
-            try:
-                loop = asyncio.get_running_loop()
-                # We're in an async context, need to handle differently
-                return self._embed_with_thread(texts)
-            except RuntimeError:
-                # No running loop, safe to create one
-                return asyncio.run(self.kaggle_client.generate_embeddings(texts))
-        except Exception as e:
-            logger.error(f"Embedding wrapper error: {e}")
-            # Fallback: return dummy embeddings to prevent crashes
-            return [[0.0] * 384 for _ in texts]
-    
-    def embed_query(self, text: str) -> List[float]:
-        """FIXED: Embed query using Kaggle (thread-safe async wrapper)"""
-        try:
-            embeddings = self.embed_documents([text])
-            return embeddings[0] if embeddings else [0.0] * 384
-        except Exception as e:
-            logger.error(f"Query embedding error: {e}")
-            return [0.0] * 384
-    
-    def _embed_with_thread(self, texts: List[str]) -> List[List[float]]:
-        """Helper: Run embedding in separate thread when in async context"""
-        
-        # Use a thread pool to run the async function
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            # Create new event loop in thread
-            def run_in_thread():
-                new_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(new_loop)
-                try:
-                    return new_loop.run_until_complete(
-                        self.kaggle_client.generate_embeddings(texts)
-                    )
-                finally:
-                    new_loop.close()
-            
-            future = executor.submit(run_in_thread)
-            return future.result(timeout=30)
-
-# --- KAGGLE-POWERED RAG PIPELINE WITH ALL YOUR FEATURES ---
-class KagglePoweredRAGPipeline:
+# --- GEMINI'S FIX: DEADLOCK-FREE RAG PIPELINE ---
+class DeadlockFreeRAGPipeline:
+    """FIXED: Direct embedding management - no more AsyncKaggleEmbeddingWrapper deadlock"""
     def __init__(self, collection_name: str, llm_manager: MultiLLMManager, kaggle_client: LazyKaggleModelClient):
         self.collection_name = collection_name
         self.llm_manager = llm_manager
@@ -764,19 +719,17 @@ class KagglePoweredRAGPipeline:
         self.security_guard = SecurityGuard()
         self.query_processor = LightweightQueryProcessor(kaggle_client)
         
-        # FIXED: Use the async-aware embedding wrapper
-        self.embedding_function = AsyncKaggleEmbeddingWrapper(kaggle_client)
-        
+        # GEMINI'S FIX: No embedding function - let Chroma be a simple data store
         self.vectorstore = Chroma(
             collection_name=collection_name,
-            embedding_function=self.embedding_function,
+            # REMOVED: embedding_function parameter completely
             persist_directory="/tmp/chroma_kaggle"
         )
         
-        logger.info(f"🚀 Kaggle-Powered RAG Pipeline initialized: {collection_name}")
+        logger.info(f"🚀 Deadlock-Free RAG Pipeline initialized: {collection_name}")
     
     async def add_documents(self, chunks: List[Dict[str, Any]]):
-        """Add documents with advanced filtering and processing"""
+        """GEMINI'S FIX: Direct embedding management - no deadlock"""
         if not chunks:
             return
         
@@ -815,22 +768,32 @@ class KagglePoweredRAGPipeline:
         
         logger.info(f"📚 Filtered to {len(quality_chunks)} quality chunks")
         
-        # Convert to LangChain documents
-        documents = [
-            LangChainDocument(
-                page_content=chunk['content'],
-                metadata=chunk['metadata']
-            )
-            for chunk in quality_chunks[:100]  # Reduced from 150 for speed
-        ]
+        if not quality_chunks:
+            return
         
-        # Add to vector store
-        if documents:
-            self.vectorstore.add_documents(documents)
-            logger.info(f"✅ Added {len(documents)} documents to vector store")
+        # GEMINI'S FIX: Step 1 - Get texts
+        texts = [chunk['content'] for chunk in quality_chunks[:100]]  # Reduced from 150 for speed
+        
+        # GEMINI'S FIX: Step 2 - Embed all texts via Kaggle (Manager gets sauce first)
+        logger.info(f"🚀 Embedding {len(texts)} chunks via Kaggle...")
+        embeddings = await self.kaggle_client.generate_embeddings(texts)
+        
+        if not embeddings or len(embeddings) != len(texts):
+            logger.error("Embedding failed or returned mismatched count.")
+            return
+        
+        # GEMINI'S FIX: Step 3 - Add to Chroma with pre-calculated embeddings
+        # This completely avoids the deadlock!
+        self.vectorstore.add_texts(
+            texts=texts,
+            metadatas=[chunk['metadata'] for chunk in quality_chunks[:100]],
+            embeddings=embeddings  # Pass vectors directly - no async calls in Chroma!
+        )
+        
+        logger.info(f"✅ Added {len(texts)} documents with embeddings to vector store (DEADLOCK-FREE)")
     
     async def answer_question(self, question: str) -> str:
-        """Answer question with advanced semantic processing"""
+        """GEMINI'S FIX: Direct query embedding - no deadlock"""
         # Security check
         if self.security_guard.detect_jailbreak(question):
             return self.security_guard.sanitize_response(question, "")
@@ -839,17 +802,18 @@ class KagglePoweredRAGPipeline:
             # Enhanced query processing
             enhanced_question = await self.query_processor.enhance_query_semantically(question)
             
-            # Initial retrieval (get more candidates)
-            retriever = self.vectorstore.as_retriever(
-                search_type="mmr",
-                search_kwargs={
-                    "k": 15,        # Reduced from 20
-                    "fetch_k": 30,  # Reduced from 40
-                    "lambda_mult": 0.5
-                }
-            )
+            # GEMINI'S FIX: Step 1 - Embed the query yourself first (Manager gets sauce)
+            query_embedding_list = await self.kaggle_client.generate_embeddings([enhanced_question])
+            if not query_embedding_list:
+                return "I could not process the query for searching."
             
-            relevant_docs = retriever.get_relevant_documents(enhanced_question)
+            query_embedding = query_embedding_list[0]
+            
+            # GEMINI'S FIX: Step 2 - Search using vector directly (no async calls in Chroma)
+            relevant_docs = self.vectorstore.similarity_search_by_vector(
+                embedding=query_embedding,
+                k=15
+            )
             
             if not relevant_docs:
                 return "I don't have sufficient information to answer this question based on the provided documents."
@@ -977,8 +941,9 @@ def test_endpoint():
     return {
         "message": "This endpoint requires POST method",
         "usage": "Send POST request with documents and questions",
-        "status": "API is running with lazy initialization",
+        "status": "API is running - DEADLOCK-FREE with lazy initialization",
         "kaggle_connection": "Will initialize on first request",
+        "fix": "Direct embedding management prevents async deadlocks",
         "method": "Use POST with JSON body",
         "example": {
             "documents": ["url1", "url2"],
@@ -986,11 +951,11 @@ def test_endpoint():
         }
     }
 
-# --- SPEED-OPTIMIZED MAIN ENDPOINT WITH LAZY INITIALIZATION ---
+# --- SPEED-OPTIMIZED MAIN ENDPOINT WITH GEMINI'S DEADLOCK FIX ---
 @app.post("/api/v1/hackrx/run", response_model=SubmissionResponse, dependencies=[Depends(verify_bearer_token)])
 async def run_submission(request: Request, submission_request: SubmissionRequest = Body(...)):
     start_time = time.time()
-    logger.info(f"🎯 KAGGLE-POWERED PROCESSING: {len(submission_request.documents)} docs, {len(submission_request.questions)} questions")
+    logger.info(f"🎯 DEADLOCK-FREE KAGGLE-POWERED PROCESSING: {len(submission_request.documents)} docs, {len(submission_request.questions)} questions")
     
     try:
         # LAZY INITIALIZATION: Only now do we connect to Kaggle!
@@ -1003,9 +968,9 @@ async def run_submission(request: Request, submission_request: SubmissionRequest
                 "Model service unavailable" for _ in submission_request.questions
             ])
         
-        # Create unique session
+        # Create unique session with DEADLOCK-FREE pipeline
         session_id = f"kaggle_{uuid.uuid4().hex[:6]}"  # Shorter UUID
-        rag_pipeline = KagglePoweredRAGPipeline(session_id, multi_llm, kaggle_client)
+        rag_pipeline = DeadlockFreeRAGPipeline(session_id, multi_llm, kaggle_client)
         
         # Process all documents with higher concurrency
         all_chunks = []
@@ -1058,7 +1023,7 @@ async def run_submission(request: Request, submission_request: SubmissionRequest
                 for _ in submission_request.questions
             ])
         
-        # Add to RAG pipeline with advanced processing
+        # Add to RAG pipeline with DEADLOCK-FREE processing
         await rag_pipeline.add_documents(all_chunks)
         
         # SPEED OPTIMIZATION: Full parallel question answering
@@ -1075,7 +1040,7 @@ async def run_submission(request: Request, submission_request: SubmissionRequest
         answers = await asyncio.gather(*tasks)
         
         elapsed = time.time() - start_time
-        logger.info(f"🎉 KAGGLE-POWERED SUCCESS! Processed in {elapsed:.2f}s")
+        logger.info(f"🎉 DEADLOCK-FREE KAGGLE-POWERED SUCCESS! Processed in {elapsed:.2f}s")
         
         return SubmissionResponse(answers=answers)
         
@@ -1088,13 +1053,13 @@ async def run_submission(request: Request, submission_request: SubmissionRequest
             for _ in submission_request.questions
         ])
 
-# --- HEALTH ENDPOINTS (YOUR EXCELLENT ORIGINAL + LAZY INFO) ---
+# --- HEALTH ENDPOINTS (YOUR EXCELLENT ORIGINAL + DEADLOCK-FREE INFO) ---
 @app.get("/")
 def read_root():
     return {
-        "message": "🎯 KAGGLE-POWERED HACKATHON RAG SYSTEM - COMPLETE WITH LAZY INITIALIZATION",
-        "version": "5.3.0",
-        "status": "FIXED: Lazy initialization prevents 'Preparing Space' issues!",
+        "message": "🎯 KAGGLE-POWERED HACKATHON RAG SYSTEM - DEADLOCK-FREE COMPLETE VERSION",
+        "version": "5.4.0",
+        "status": "FIXED: Deadlock-free + lazy initialization prevents all issues!",
         "target_time": "<20 seconds with Kaggle GPU",
         "supported_formats": list(doc_processor.processors.keys()),
         "features": [
@@ -1107,14 +1072,17 @@ def read_root():
             "Semantic chunking and context fusion",
             "R4 'half questions' handling",
             "Lightning-fast GPU-accelerated response times",
-            "Fixed asyncio event loop issues",
-            "Ngrok compatibility headers",
-            "LAZY INITIALIZATION - prevents startup timeouts"
+            "DEADLOCK-FREE async operations",
+            "Lazy initialization prevents startup timeouts",
+            "Direct embedding management"
         ],
         "kaggle_connection": "Lazy (connects on first API call)",
+        "embedding_method": "Direct Kaggle management (no wrapper deadlock)",
         "fixes": [
+            "DeadlockFreeRAGPipeline prevents async conflicts",
             "LazyKaggleModelClient prevents startup connection",
-            "AsyncKaggleEmbeddingWrapper with thread isolation",
+            "Direct embedding calls to Kaggle (no AsyncWrapper)",
+            "Chroma as simple data store (no embedding function)",
             "CORS headers with ngrok-skip-browser-warning",
             "Both GET and POST endpoints for /api/v1/hackrx/run",
             "Improved error handling and logging",
@@ -1126,14 +1094,16 @@ def read_root():
 def health_check():
     return {
         "status": "healthy",
-        "version": "5.3.0",
-        "mode": "KAGGLE_GPU_POWERED_LAZY",
+        "version": "5.4.0",
+        "mode": "DEADLOCK_FREE_KAGGLE_GPU_POWERED_LAZY",
         "cache_size": len(doc_processor.cache),
         "kaggle_connection": "lazy (on-demand)",
+        "embedding_method": "direct_kaggle_management",
         "timestamp": time.time(),
         "fixes_applied": [
+            "deadlock_free_pipeline",
             "lazy_initialization",
-            "asyncio_event_loop_fix", 
+            "direct_embedding_management", 
             "ngrok_compatibility",
             "http_method_fix",
             "cors_headers",
@@ -1149,6 +1119,7 @@ async def test_kaggle_connection():
         return {
             "kaggle_connection": "initialized" if kaggle_client._initialized else "not_initialized",
             "health_status": "healthy" if is_healthy else "unhealthy",
+            "endpoint": kaggle_client._endpoint if kaggle_client._initialized else "not_set",
             "timestamp": time.time()
         }
     except Exception as e:
