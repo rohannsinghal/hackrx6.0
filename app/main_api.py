@@ -1,4 +1,4 @@
-# --- KAGGLE-POWERED RAG SYSTEM (NO LOCAL MODELS) - COMPLETE VERSION ---
+# --- KAGGLE-POWERED RAG SYSTEM WITH LAZY INITIALIZATION - COMPLETE 1144+ LINES ---
 
 import os
 import json
@@ -22,11 +22,11 @@ from fastapi import FastAPI, Body, HTTPException, Request, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-# LangChain imports (NO SENTENCE TRANSFORMERS!)
+# LangChain imports
 from langchain_community.vectorstores import Chroma
 from langchain.schema.document import Document as LangChainDocument
 
-# Multi-format document processing (KEEPING ALL YOUR PROCESSORS)
+# Multi-format document processing
 import fitz  # PyMuPDF
 import pdfplumber
 import docx
@@ -38,7 +38,7 @@ from email.policy import default
 from bs4 import BeautifulSoup
 import xml.etree.ElementTree as ET
 
-# LLM providers (KEEPING YOUR MULTI-LLM SETUP)
+# LLM providers
 import groq
 import openai
 import google.generativeai as genai
@@ -51,31 +51,48 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Kaggle-Powered Hackathon RAG", version="5.2.0")
+app = FastAPI(title="Kaggle-Powered Hackathon RAG", version="5.3.0")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*", "ngrok-skip-browser-warning"],  # Added ngrok header
+    allow_headers=["*", "ngrok-skip-browser-warning"],
 )
 
-# --- KAGGLE MODEL CLIENT WITH IMPROVED ERROR HANDLING ---
-class KaggleModelClient:
-    def __init__(self, kaggle_endpoint: str):
-        self.kaggle_endpoint = kaggle_endpoint.rstrip('/')
-        # Added ngrok-skip-browser-warning header
-        self.client = httpx.AsyncClient(
-            timeout=30.0,
-            headers={"ngrok-skip-browser-warning": "true"}
-        )
-        logger.info(f"🎯 Kaggle Model Client initialized: {kaggle_endpoint}")
-        
+# --- CRITICAL FIX: LAZY KAGGLE MODEL CLIENT ---
+class LazyKaggleModelClient:
+    """LAZY INITIALIZATION: Only connects when actually needed - PREVENTS 'Preparing Space' ISSUE"""
+    def __init__(self):
+        self._client = None
+        self._endpoint = None
+        self._initialized = False
+        logger.info("🎯 Lazy Kaggle Model Client created (no immediate connection)")
+    
+    def _initialize_if_needed(self):
+        """Initialize client only when first API call is made"""
+        if not self._initialized:
+            # Get endpoint from Hugging Face Secrets (or fallback to env var)
+            self._endpoint = os.getenv("KAGGLE_NGROK_URL") or os.getenv("KAGGLE_ENDPOINT", "")
+            
+            if not self._endpoint:
+                logger.error("❌ No KAGGLE_NGROK_URL found in secrets or environment!")
+                raise Exception("Kaggle endpoint not configured")
+            
+            self._endpoint = self._endpoint.rstrip('/')
+            self._client = httpx.AsyncClient(
+                timeout=30.0,
+                headers={"ngrok-skip-browser-warning": "true"}
+            )
+            self._initialized = True
+            logger.info(f"🎯 Lazy Kaggle client initialized: {self._endpoint}")
+    
     async def health_check(self) -> bool:
         """Check if Kaggle model server is healthy"""
         try:
-            response = await self.client.get(f"{self.kaggle_endpoint}/health")
+            self._initialize_if_needed()
+            response = await self._client.get(f"{self._endpoint}/health")
             return response.status_code == 200
         except Exception as e:
             logger.error(f"Kaggle health check failed: {e}")
@@ -84,8 +101,9 @@ class KaggleModelClient:
     async def generate_embeddings(self, texts: List[str]) -> List[List[float]]:
         """Generate embeddings using Kaggle GPU"""
         try:
-            response = await self.client.post(
-                f"{self.kaggle_endpoint}/embed",
+            self._initialize_if_needed()
+            response = await self._client.post(
+                f"{self._endpoint}/embed",
                 json={"texts": texts}
             )
             response.raise_for_status()
@@ -99,8 +117,9 @@ class KaggleModelClient:
     async def rerank_documents(self, query: str, documents: List[str], k: int = 8) -> List[str]:
         """Rerank documents using Kaggle GPU"""
         try:
-            response = await self.client.post(
-                f"{self.kaggle_endpoint}/rerank",
+            self._initialize_if_needed()
+            response = await self._client.post(
+                f"{self._endpoint}/rerank",
                 json={
                     "query": query,
                     "documents": documents,
@@ -113,34 +132,28 @@ class KaggleModelClient:
             return result["reranked_documents"]
         except Exception as e:
             logger.error(f"Kaggle reranking error: {e}")
-            return documents[:k]  # Fallback to original order
+            return documents[:k]
 
-# --- LIGHTWEIGHT QUERY PROCESSOR ---
+# --- LIGHTWEIGHT QUERY PROCESSOR (YOUR EXCELLENT ORIGINAL) ---
 class LightweightQueryProcessor:
-    def __init__(self, kaggle_client: KaggleModelClient):
+    def __init__(self, kaggle_client: LazyKaggleModelClient):
         self.kaggle_client = kaggle_client
         self.cache = cachetools.TTLCache(maxsize=500, ttl=3600)
         
     async def enhance_query_semantically(self, question: str, domain: str = "insurance") -> str:
         """OPTIMIZED semantic query processing"""
-        
-        # Quick cache check with shorter hash
         cache_key = hashlib.md5(question.encode()).hexdigest()[:8]
         if cache_key in self.cache:
             return self.cache[cache_key]
         
-        # Streamlined domain expansion
         enhanced_query = self._expand_with_domain_knowledge_fast(question, domain)
         enhanced_query = self._handle_incomplete_questions(enhanced_query)
         
-        # Cache result
         self.cache[cache_key] = enhanced_query
         return enhanced_query
     
     def _expand_with_domain_knowledge_fast(self, query: str, domain: str) -> str:
         """OPTIMIZED domain expansion - same intelligence, faster processing"""
-        
-        # Streamlined expansion mapping for speed
         key_expansions = {
             'grace period': 'payment deadline premium due',
             'waiting period': 'exclusion time coverage delay',
@@ -177,7 +190,7 @@ class LightweightQueryProcessor:
         
         return query
 
-# --- ANTI-JAILBREAK SECURITY SYSTEM ---
+# --- ANTI-JAILBREAK SECURITY SYSTEM (YOUR EXCELLENT ORIGINAL) ---
 class SecurityGuard:
     def __init__(self):
         self.jailbreak_patterns = [
@@ -213,7 +226,7 @@ class SecurityGuard:
         
         return answer
 
-# --- MULTI-LLM MANAGER ---
+# --- MULTI-LLM MANAGER (YOUR EXCELLENT ORIGINAL WITH ALL PROVIDERS) ---
 class MultiLLMManager:
     def __init__(self):
         # Initialize multiple LLM providers with fallback
@@ -289,7 +302,7 @@ class MultiLLMManager:
         response = await model.generate_content_async(prompt)
         return response.text.strip()
 
-# --- COMPLETE UNIVERSAL DOCUMENT PROCESSOR ---
+# --- COMPLETE UNIVERSAL DOCUMENT PROCESSOR (ALL 12 FORMATS!) ---
 class UniversalDocumentProcessor:
     def __init__(self):
         # SPEED OPTIMIZATIONS: Reduced limits
@@ -366,7 +379,7 @@ class UniversalDocumentProcessor:
         else:
             return '.txt'
     
-    # --- SPEED-OPTIMIZED PDF PROCESSING ---
+    # --- SPEED-OPTIMIZED PDF PROCESSING (YOUR EXCELLENT ORIGINAL) ---
     async def process_pdf(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
         """Enhanced PDF processing with speed optimizations"""
         chunks = []
@@ -433,7 +446,7 @@ class UniversalDocumentProcessor:
         
         return table_text
     
-    # --- OTHER FORMAT PROCESSORS (KEEPING ALL YOUR EXCELLENT FEATURES) ---
+    # --- OTHER FORMAT PROCESSORS (ALL YOUR EXCELLENT FEATURES) ---
     async def process_docx(self, file_path: str, content: bytes) -> List[Dict[str, Any]]:
         """Process DOCX files"""
         temp_path = f"/tmp/{uuid.uuid4().hex[:6]}.docx"
@@ -613,7 +626,7 @@ class UniversalDocumentProcessor:
             logger.error(f"JSON processing error: {e}")
             return []
     
-    # --- UTILITY METHODS ---
+    # --- UTILITY METHODS (YOUR EXCELLENT ORIGINAL) ---
     def _clean_text(self, text: str) -> str:
         """Clean extracted text"""
         # Remove excessive whitespace
@@ -691,10 +704,10 @@ class UniversalDocumentProcessor:
             "chunk_id": str(uuid.uuid4())
         }]
 
-# --- FIXED: ASYNC-AWARE EMBEDDING WRAPPER ---
+# --- FIXED: ASYNC-AWARE EMBEDDING WRAPPER (YOUR EXCELLENT ORIGINAL + FIX) ---
 class AsyncKaggleEmbeddingWrapper:
     """FIXED: Async-aware embedding wrapper that works with Chroma"""
-    def __init__(self, kaggle_client: KaggleModelClient):
+    def __init__(self, kaggle_client: LazyKaggleModelClient):
         self.kaggle_client = kaggle_client
         self._embeddings_cache = {}
     
@@ -744,7 +757,7 @@ class AsyncKaggleEmbeddingWrapper:
 
 # --- KAGGLE-POWERED RAG PIPELINE WITH ALL YOUR FEATURES ---
 class KagglePoweredRAGPipeline:
-    def __init__(self, collection_name: str, llm_manager: MultiLLMManager, kaggle_client: KaggleModelClient):
+    def __init__(self, collection_name: str, llm_manager: MultiLLMManager, kaggle_client: LazyKaggleModelClient):
         self.collection_name = collection_name
         self.llm_manager = llm_manager
         self.kaggle_client = kaggle_client
@@ -769,7 +782,7 @@ class KagglePoweredRAGPipeline:
         
         logger.info(f"📚 Processing {len(chunks)} chunks...")
         
-        # Advanced quality filtering
+        # Advanced quality filtering (YOUR EXCELLENT ORIGINAL LOGIC)
         quality_chunks = []
         for chunk in chunks:
             content = chunk['content']
@@ -873,7 +886,7 @@ class KagglePoweredRAGPipeline:
             return "An error occurred while processing your question."
     
     def _create_advanced_prompt(self, context: str, question: str) -> str:
-        """Create advanced semantic-aware prompt"""
+        """Create advanced semantic-aware prompt (YOUR EXCELLENT ORIGINAL)"""
         return f"""You are an expert insurance policy analyst with advanced semantic understanding.
 
 CONTEXT ANALYSIS FRAMEWORK:
@@ -904,7 +917,7 @@ RESPONSE REQUIREMENTS:
 ANSWER:"""
     
     def _clean_response(self, response: str) -> str:
-        """Enhanced response cleaning"""
+        """Enhanced response cleaning (YOUR EXCELLENT ORIGINAL)"""
         # Remove excessive quotes
         response = re.sub(r'"([^"]{1,50})"', r'\1', response)
         response = re.sub(r'"(\w+)"', r'\1', response)
@@ -925,7 +938,7 @@ ANSWER:"""
         
         return response.strip()
 
-# --- AUTHENTICATION ---
+# --- AUTHENTICATION (YOUR EXCELLENT ORIGINAL) ---
 async def verify_bearer_token(authorization: str = Header(None)):
     """Enhanced authentication with better logging"""
     if not authorization:
@@ -942,13 +955,12 @@ async def verify_bearer_token(authorization: str = Header(None)):
     logger.info(f"✅ Authentication successful with token: {token[:10]}...")
     return token
 
-# --- GLOBAL INSTANCES ---
+# --- GLOBAL INSTANCES (NO EARLY KAGGLE CONNECTION!) ---
 multi_llm = MultiLLMManager()
 doc_processor = UniversalDocumentProcessor()
 
-# Set your Kaggle ngrok endpoint here
-KAGGLE_ENDPOINT = os.getenv("KAGGLE_ENDPOINT", "https://7c040cc03b71.ngrok-free.app")
-kaggle_client = KaggleModelClient(KAGGLE_ENDPOINT)
+# CRITICAL: Create lazy client (no immediate connection!)
+kaggle_client = LazyKaggleModelClient()
 
 # --- API MODELS ---
 class SubmissionRequest(BaseModel):
@@ -965,7 +977,8 @@ def test_endpoint():
     return {
         "message": "This endpoint requires POST method",
         "usage": "Send POST request with documents and questions",
-        "status": "API is running",
+        "status": "API is running with lazy initialization",
+        "kaggle_connection": "Will initialize on first request",
         "method": "Use POST with JSON body",
         "example": {
             "documents": ["url1", "url2"],
@@ -973,14 +986,17 @@ def test_endpoint():
         }
     }
 
-# --- SPEED-OPTIMIZED MAIN ENDPOINT ---
+# --- SPEED-OPTIMIZED MAIN ENDPOINT WITH LAZY INITIALIZATION ---
 @app.post("/api/v1/hackrx/run", response_model=SubmissionResponse, dependencies=[Depends(verify_bearer_token)])
 async def run_submission(request: Request, submission_request: SubmissionRequest = Body(...)):
     start_time = time.time()
     logger.info(f"🎯 KAGGLE-POWERED PROCESSING: {len(submission_request.documents)} docs, {len(submission_request.questions)} questions")
     
     try:
-        # Check Kaggle health
+        # LAZY INITIALIZATION: Only now do we connect to Kaggle!
+        logger.info("🔄 Initializing Kaggle connection (lazy initialization)...")
+        
+        # Check Kaggle health (this will trigger initialization)
         if not await kaggle_client.health_check():
             logger.error("❌ Kaggle endpoint not available!")
             return SubmissionResponse(answers=[
@@ -1072,13 +1088,13 @@ async def run_submission(request: Request, submission_request: SubmissionRequest
             for _ in submission_request.questions
         ])
 
-# --- HEALTH ENDPOINTS ---
+# --- HEALTH ENDPOINTS (YOUR EXCELLENT ORIGINAL + LAZY INFO) ---
 @app.get("/")
 def read_root():
     return {
-        "message": "🎯 KAGGLE-POWERED HACKATHON RAG SYSTEM - COMPLETE",
-        "version": "5.2.0",
-        "status": "FIXED: Event loop + ngrok + HTTP method issues resolved!",
+        "message": "🎯 KAGGLE-POWERED HACKATHON RAG SYSTEM - COMPLETE WITH LAZY INITIALIZATION",
+        "version": "5.3.0",
+        "status": "FIXED: Lazy initialization prevents 'Preparing Space' issues!",
         "target_time": "<20 seconds with Kaggle GPU",
         "supported_formats": list(doc_processor.processors.keys()),
         "features": [
@@ -1092,14 +1108,17 @@ def read_root():
             "R4 'half questions' handling",
             "Lightning-fast GPU-accelerated response times",
             "Fixed asyncio event loop issues",
-            "Ngrok compatibility headers"
+            "Ngrok compatibility headers",
+            "LAZY INITIALIZATION - prevents startup timeouts"
         ],
-        "kaggle_endpoint": KAGGLE_ENDPOINT,
+        "kaggle_connection": "Lazy (connects on first API call)",
         "fixes": [
+            "LazyKaggleModelClient prevents startup connection",
             "AsyncKaggleEmbeddingWrapper with thread isolation",
             "CORS headers with ngrok-skip-browser-warning",
             "Both GET and POST endpoints for /api/v1/hackrx/run",
-            "Improved error handling and logging"
+            "Improved error handling and logging",
+            "Hugging Face Secrets support for dynamic URLs"
         ]
     }
 
@@ -1107,32 +1126,34 @@ def read_root():
 def health_check():
     return {
         "status": "healthy",
-        "version": "5.2.0",
-        "mode": "KAGGLE_GPU_POWERED",
+        "version": "5.3.0",
+        "mode": "KAGGLE_GPU_POWERED_LAZY",
         "cache_size": len(doc_processor.cache),
-        "kaggle_endpoint": KAGGLE_ENDPOINT,
+        "kaggle_connection": "lazy (on-demand)",
         "timestamp": time.time(),
         "fixes_applied": [
-            "asyncio_event_loop_fix",
+            "lazy_initialization",
+            "asyncio_event_loop_fix", 
             "ngrok_compatibility",
             "http_method_fix",
-            "cors_headers"
+            "cors_headers",
+            "hf_secrets_support"
         ]
     }
 
 @app.get("/test-kaggle")
 async def test_kaggle_connection():
-    """Test endpoint to check Kaggle connection"""
+    """Test endpoint to check Kaggle connection (will trigger lazy initialization)"""
     try:
         is_healthy = await kaggle_client.health_check()
         return {
-            "kaggle_endpoint": KAGGLE_ENDPOINT,
+            "kaggle_connection": "initialized" if kaggle_client._initialized else "not_initialized",
             "health_status": "healthy" if is_healthy else "unhealthy",
             "timestamp": time.time()
         }
     except Exception as e:
         return {
-            "kaggle_endpoint": KAGGLE_ENDPOINT,
+            "kaggle_connection": "failed",
             "health_status": "error",
             "error": str(e),
             "timestamp": time.time()
