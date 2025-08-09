@@ -1,3 +1,55 @@
-fastapi
-uvicorn
-pydantic
+# Fixed requirements.txt for Standalone RAG System
+
+# Core FastAPI dependencies
+fastapi==0.104.1
+uvicorn==0.24.0
+pydantic==2.5.1
+httpx==0.25.2
+python-dotenv==1.0.0
+psutil==5.9.6
+python-multipart==0.0.6
+
+# Document processing
+PyMuPDF==1.23.8
+pdfplumber==0.10.3
+mammoth==1.6.0
+beautifulsoup4==4.12.2
+
+# LangChain framework (compatible versions)
+langchain==0.1.20
+langchain-community==0.0.38
+langchain-core==0.1.52
+
+# Vector database and embeddings
+chromadb==0.4.18
+sentence-transformers==2.2.2
+
+# HuggingFace integration
+huggingface-hub==0.19.4
+transformers==4.36.2
+
+# LLM Integration
+groq==0.4.1
+
+# Core ML and scientific computing
+numpy==1.24.3
+scipy==1.11.4
+scikit-learn==1.3.2
+
+# Text processing
+tiktoken==0.5.2
+
+# Additional utilities
+python-Levenshtein==0.23.0
+python-magic==0.4.27
+
+# Core dependencies that might be missing
+typing-extensions==4.8.0
+requests==2.31.0
+certifi==2023.11.17
+
+openai 
+python-docx
+google-generativeai
+openpyxl 
+rarfile

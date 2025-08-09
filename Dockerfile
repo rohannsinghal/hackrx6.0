@@ -1,25 +1,25 @@
-# Use an official Python runtime as a parent image
+# Use an official, lightweight Python image
 FROM python:3.10-slim
 
 # Set the working directory in the container
 WORKDIR /code
 
-# Copy only the requirements file first to leverage Docker's build cache
+# Copy the requirements file first to leverage Docker's build cache
 COPY ./requirements.txt /code/requirements.txt
 
-# Install all Python dependencies, without using a cache to ensure a fresh install
-RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt 
+# Install all Python dependencies
+RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
 
-# Create writable directories for caches, databases, and temporary files
-# and set the appropriate environment variables.
-RUN mkdir -p /code/cache && chmod 777 /code/cache 
-RUN mkdir -p /code/app/chroma_db && chmod -R 777 /code/app/chroma_db 
-RUN mkdir -p /tmp/docs && chmod 777 /tmp/docs 
-ENV HF_HOME=/code/cache 
-ENV SENTENCE_TRANSFORMERS_HOME=/code/cache 
+# Copy the rest of your application code into a subdirectory
+COPY ./app /code/app
 
-# Now, copy the rest of your application code
-COPY ./app /code/app 
+# --- FIX 1: Set the working directory to where your app code is ---
+WORKDIR /code/app
+
+# --- FIX 2: CRITICAL - Expose the port your app runs on ---
+# This tells Hugging Face where to send traffic.
+EXPOSE 7860
 
 # Define the command to run your application
-CMD ["uvicorn", "app.main_api:app", "--host", "0.0.0.0", "--port", "7860"] 
+# This now correctly runs from inside the /code/app directory
+CMD ["uvicorn", "main_api:app", "--host", "0.0.0.0", "--port", "7860"]
