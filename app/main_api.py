@@ -958,8 +958,8 @@ class SubmissionRequest(BaseModel):
 class SubmissionResponse(BaseModel):
     answers: List[str]
 
-# --- FIXED: BOTH GET AND POST ENDPOINTS FOR /hackrx/run ---
-@app.get("/hackrx/run")
+# --- FIXED: BOTH GET AND POST ENDPOINTS FOR /api/v1/hackrx/run ---
+@app.get("/api/v1/hackrx/run")
 def test_endpoint():
     """GET endpoint for testing - fixes 405 Method Not Allowed error"""
     return {
@@ -974,7 +974,7 @@ def test_endpoint():
     }
 
 # --- SPEED-OPTIMIZED MAIN ENDPOINT ---
-@app.post("/hackrx/run", response_model=SubmissionResponse, dependencies=[Depends(verify_bearer_token)])
+@app.post("/api/v1/hackrx/run", response_model=SubmissionResponse, dependencies=[Depends(verify_bearer_token)])
 async def run_submission(request: Request, submission_request: SubmissionRequest = Body(...)):
     start_time = time.time()
     logger.info(f"🎯 KAGGLE-POWERED PROCESSING: {len(submission_request.documents)} docs, {len(submission_request.questions)} questions")
@@ -1098,7 +1098,7 @@ def read_root():
         "fixes": [
             "AsyncKaggleEmbeddingWrapper with thread isolation",
             "CORS headers with ngrok-skip-browser-warning",
-            "Both GET and POST endpoints for /hackrx/run",
+            "Both GET and POST endpoints for /api/v1/hackrx/run",
             "Improved error handling and logging"
         ]
     }
