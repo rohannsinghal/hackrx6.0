@@ -49,6 +49,6 @@ requests==2.31.0
 certifi==2023.11.17
 
 openai 
-docx
+python-docx
 google-generativeai
 openpyxl 
